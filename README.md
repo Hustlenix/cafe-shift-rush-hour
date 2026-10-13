@@ -6,6 +6,8 @@ A playable **Godot 4** café game for [PIXL project 1646](https://pixl.hackclub.
 
 ## Play
 
+**[Play the verified Web demo](https://cafe-shift-rush-hour.vercel.app/)** · **[Download the Web build](https://github.com/Hustlenix/cafe-shift-rush-hour/releases/latest)**
+
 Open `project.godot` in Godot **4.7.1** and press **F5**. The core uses native Godot Controls and GDScript.
 
 - **The till:** nine items, four categories, search, quantity controls, cart total, guest/table entry, and order placement.
@@ -25,11 +27,23 @@ On 2026-10-13 the project was imported and tested with Godot 4.7.1 on Windows:
 - Original order smoke test passes without leaked objects.
 - **61 core checks pass:** totals, quantities, exact recipes, duplicate rewards, five-order victory, timer failure, persistence, invalid save lines, duplicate restored IDs, and future-schema protection.
 - **49 native GUI pointer activations pass**, plus keyboard kitchen-tab activation. These exercise categories, all nine Add buttons, every quantity button, cart clearing, order placement, preparation, completion, customer selection, shift controls, options, and reset confirmation.
-- **26 backend security checks pass** against a real SQLite fixture: role enforcement, room isolation, menu/quantity validation, authoritative prices, idempotent order submission, and atomic status transitions.
+- **30 backend security checks pass** against a real SQLite fixture: role enforcement, room isolation, menu/quantity validation, authoritative prices, idempotent order submission including a full room, and atomic status transitions.
+- **Two independent Godot processes pass against the deployed HTTPS API and real Postgres database.** The till sends two lattes and one chai (Rs 470); the kitchen receives New, advances Preparing and Done, and the till sees Done automatically. Recorded round trip: 4,341 ms. See [the actual client logs](docs/sync-proof.json).
+- **Two Web clients also complete the actual UI flow:** create room, copy/paste code, join kitchen, submit Ada's Rs 470 ticket, prepare, complete and automatically receive Done at the till. [Till proof](docs/screenshots/web-sync-done-pos.jpg) · [kitchen proof](docs/screenshots/web-sync-done-kitchen.jpg).
 
 Screenshots in `docs/screenshots/` are captured from the running Godot game by the UI test. They are not mockups.
 
-**Still being completed:** live backend deployment, Godot client synchronization, two independent client proof, Web export and public demo verification. Backend fixture tests are not proof of live synchronization. No development hours or PIXL journal entries have been invented.
+The exported game and backend are hosted on Vercel; the database is Lakebase Postgres on Neon's free plan. No development hours or PIXL journal entries have been invented. See [verification evidence and remaining device-QA limits](docs/VERIFICATION.md).
+
+## Connect a till and kitchen
+
+1. Open the demo on two clients. On the till, choose **Connect devices → Create till room → Copy kitchen code**.
+2. On the kitchen, choose **Connect devices**, use **Paste** beside **Join as kitchen**, and click **Join kitchen**. You can also enter the code with the keyboard.
+3. Close the dialog. Send a till order and watch it appear in the kitchen. Only the kitchen credential can advance tickets. Both clients refresh automatically every two seconds.
+
+Room tokens use 192 bits of randomness and are stored as SHA-256 hashes on the server. The database connection string stays in Vercel's server environment. Tokens are kept in client memory and never placed in URLs. Keep the kitchen code private. Rooms expire after seven days and hold up to 100 tickets. Rejoining after a refresh requires the kitchen code; refreshing the till requires a fresh room. **Disconnect** returns to the locally saved game.
+
+Online tickets persist in the server database independently of offline NPC challenges and XP. Online service uses HTTPS polling; it is not a WebSocket connection. The two-process proof was performed on this computer, not on a physical phone.
 
 ## Run tests
 
@@ -38,11 +52,12 @@ godot --headless --editor --path . --quit
 godot --headless --path . --script res://tests/test_orders.gd
 godot --headless --path . --script res://tests/test_core.gd
 godot --path . --script res://tests/test_ui.gd
-cd backend
-node tests/security.mjs
+npm ci
+npm run test:backend
+python tools/test_network.py --endpoint https://cafe-shift-rush-hour.vercel.app
 ```
 
-The core tests use isolated temporary data. The GUI test disables saving and uses Godot viewport input; it also writes actual gameplay screenshots. Node 24 or newer supports the backend's built-in SQLite test adapter. A passing process exit alone is insufficient for import checks: inspect output for `SCRIPT ERROR` and `ERROR` too.
+The core tests use isolated temporary data. The GUI test disables saving and uses Godot viewport input; it also writes actual gameplay screenshots. Node 24 supports the backend's built-in SQLite test adapter. The network runner starts two separate Godot processes with no shared ticket model, privately passes a temporary pairing credential, and revokes the test room afterward. Supply `--godot /path/to/godot` on other systems. A passing process exit alone is insufficient for import checks: inspect output for `SCRIPT ERROR` and `ERROR` too.
 
 ## Art and licenses
 
@@ -65,9 +80,11 @@ The script composes `assets/licensed/cafe.png` and copies the required animation
 | `scripts/shift_rules.gd` | Requests, recipes, patience, arrivals, run goal, bonuses, results |
 | `scripts/main.gd` | Stable native UI, menu/search/cart, kitchen, dialogs, sound |
 | `scripts/cafe_view.gd` | Live café art, customer animation, speech bubbles, steam |
+| `scripts/kitchen_sync.gd` | HTTPS client, role credentials, automatic polling, retry-safe submission |
 | `scripts/main_starter.gd` | Preserved repaired starter interface for reference |
-| `backend/worker/index.js` | HTTPS room API with hashed 192-bit role credentials and D1 persistence |
-| `backend/drizzle/0000_cafe.sql` | Versioned database schema |
+| `backend/worker/index.js` | Shared room API, authoritative prices and atomic transitions |
+| `api/index.mjs`, `backend/neon_adapter.mjs` | Vercel handler and parameterized Postgres adapter |
+| `backend/migrations/001_postgres.sql` | Production schema; SQLite schema in `backend/drizzle/` is for tests |
 | `tests/` | Godot smoke, core and GUI checks |
 
 The offline game runs without keys or services. Browser local saves depend on storage permission; private browsing may discard them. Prices are fictional rupee amounts; no payment processing occurs.
@@ -81,3 +98,14 @@ The existing Hackatime configuration was inspected read-only and still points to
 ## Build and release
 
 Use the Godot Web export templates matching 4.7.1 and the Compatibility renderer. Disable threads for a static host. Publish all generated files together, then verify menu → cart → kitchen → done and persistence on the hosted build before treating a demo URL as shipped. See [Godot Web export documentation](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html).
+
+```sh
+godot --headless --path . --export-release Web builds/web/index.html
+vercel link
+vercel env pull .env.local
+npm run db:migrate
+vercel deploy --prod
+python tools/package_release.py --out builds/release
+```
+
+Provision your own Neon database and set `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (migration) in Vercel before deploying the API. Do not commit `.env.local`. For local API development, run `npm run dev:backend`; the supported endpoint is `http://127.0.0.1:8790`. Native clients require HTTPS outside that loopback exception.

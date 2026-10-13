@@ -46,28 +46,42 @@ var _audio: AudioStreamPlayer
 var _next_mode: String = "RUSH"
 var _refresh_pending: bool = false
 var _shown_result: String = ""
+var _sync_dialog: AcceptDialog
+var _sync_endpoint: LineEdit
+var _sync_input: LineEdit
+var _sync_code: LineEdit
+var _sync_status: Label
+var _submitted_cart: Dictionary = {}
+var _clipboard_success: JavaScriptObject
+var _clipboard_failure: JavaScriptObject
 
 func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
     _build_ui()
+    if OS.has_feature("web"):
+        _clipboard_success = JavaScriptBridge.create_callback(_clipboard_pasted)
+        _clipboard_failure = JavaScriptBridge.create_callback(_clipboard_denied)
     OrderStore.cart_changed.connect(_schedule_refresh)
     OrderStore.orders_changed.connect(_schedule_refresh)
     OrderStore.game_changed.connect(_schedule_refresh)
+    KitchenSync.changed.connect(_on_sync_changed)
+    KitchenSync.order_sent.connect(_on_online_sent)
     _audio = AudioStreamPlayer.new()
     add_child(_audio)
     _refresh_all()
     _tab_order.grab_focus()
 
 func _process(_delta: float) -> void:
-    _clock.text = "%02d:%02d" % [int(ceil(OrderStore.shift.remaining)) / 60, int(ceil(OrderStore.shift.remaining)) % 60] if OrderStore.shift.mode == "RUSH" else "NO TIMER"
-    _served.text = "%d / 5 served" % OrderStore.shift.served
+    _clock.text = "ONLINE" if KitchenSync.active else ("%02d:%02d" % [int(ceil(OrderStore.shift.remaining)) / 60, int(ceil(OrderStore.shift.remaining)) % 60] if OrderStore.shift.mode == "RUSH" else "NO TIMER")
+    _served.text = "%d online ticket%s" % [KitchenSync.orders.size(),"" if KitchenSync.orders.size() == 1 else "s"] if KitchenSync.active else "%d / 5 served" % OrderStore.shift.served
     _xp.text = "%d XP  ·  Lv %d" % [OrderStore.xp, 1 + OrderStore.xp / 150]
+    _goal.visible = not KitchenSync.active
     _goal.value = mini(5, OrderStore.shift.served)
     for id in _patience.keys():
         var request: Dictionary = OrderStore.shift.find_request(id)
         if not request.is_empty() and is_instance_valid(_patience[id]):
             _patience[id].value = float(request["patience"])
-    if not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
+    if not KitchenSync.active and not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
         _shown_result = OrderStore.shift.result
         _results.title = "A shift to remember!" if _shown_result == "SUCCESS" else "That's the afternoon rush!"
         _results.dialog_text = "%d / 5 requests served\n%d shift XP · Rs %d earned\n%d customers left before ordering\n\n%s" % [OrderStore.shift.served, OrderStore.shift.score, OrderStore.earnings, OrderStore.shift.missed,
@@ -85,6 +99,24 @@ func _refresh_all() -> void:
     _refresh_cart()
     _refresh_kitchen()
     _refresh_requests()
+
+func _on_sync_changed() -> void:
+    OrderStore.set_process(not KitchenSync.active)
+    _sync_status.text = KitchenSync.status
+    _sync_code.text = KitchenSync.kitchen_code
+    _notify(KitchenSync.status)
+    _schedule_refresh()
+    if KitchenSync.active and KitchenSync.role == "KITCHEN":
+        _switch_screen("KITCHEN")
+
+func _on_online_sent(id: int) -> void:
+    for key in _submitted_cart:
+        OrderStore.change_quantity(key,-int(_submitted_cart[key]))
+    _submitted_cart.clear()
+    _name.clear()
+    _table.clear()
+    _play("order")
+    _notify("Online ticket #%d accepted by the server." % id)
 
 func _box(bg: Color = PAPER, border: Color = LINE, radius: int = 8, padding: int = 12) -> StyleBoxFlat:
     var s := StyleBoxFlat.new()
@@ -216,7 +248,7 @@ func _build_ui() -> void:
     desk.add_child(_kitchen_page)
     _kitchen_page.hide()
     var footer: HBoxContainer = _row()
-    footer.add_child(_label("●  CAFÉ SHIFT",12,GREEN))
+    footer.add_child(_label("*  CAFÉ SHIFT",12,GREEN))
     _status = _label("Welcome in. Select a customer, read their request, and build their order.",13,MUTED)
     _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     footer.add_child(_status)
@@ -262,7 +294,7 @@ func _build_cafe() -> VBoxContainer:
     var title: HBoxContainer = _row()
     title.add_child(_label("A little café, a lovely afternoon.",20,INK))
     side.add_child(title)
-    side.add_child(_label("Read the request  →  ring it up  →  serve it warm",13,MUTED))
+    side.add_child(_label("Read the request  >  ring it up  >  serve it warm",13,MUTED))
     _world = WorldView.new()
     _world.custom_minimum_size = Vector2(430,322)
     side.add_child(_world)
@@ -340,7 +372,7 @@ func _build_order_desk() -> HBoxContainer:
     _total = _label("TOTAL     Rs 0",22)
     cart.add_child(_total)
     cart.add_child(_label("No real payments. Just good coffee.",11,MUTED))
-    _send = _button("Send to kitchen  →",_place_order,true,"SendOrder")
+    _send = _button("Send to kitchen  >",_place_order,true,"SendOrder")
     _send.custom_minimum_size.y = 46
     cart.add_child(_send)
     cart.add_child(_button("Clear cart",func(): OrderStore.clear_cart(),false,"ClearCart"))
@@ -394,7 +426,7 @@ func _refresh_cart() -> void:
     _clear(_cart_list)
     _cart_count.text = "%d items · made fresh" % OrderStore.cart_item_count()
     _total.text = "TOTAL     Rs %d" % OrderStore.cart_total()
-    _send.disabled = OrderStore.cart.is_empty() or (OrderStore.shift.mode == "RUSH" and not OrderStore.shift.active)
+    _send.disabled = OrderStore.cart.is_empty() or (not KitchenSync.active and OrderStore.shift.mode == "RUSH" and not OrderStore.shift.active) or KitchenSync.busy or (KitchenSync.active and KitchenSync.role != "POS")
     if OrderStore.cart.is_empty():
         _cart_list.add_child(_icon("croissant",70))
         _cart_list.add_child(_label("A fresh start.\nAdd something from the menu.",14,MUTED))
@@ -418,6 +450,11 @@ func _refresh_cart() -> void:
 func _refresh_requests() -> void:
     _clear(_request_list)
     _patience.clear()
+    if KitchenSync.active:
+        var note: Label = _label("CONNECTED SERVICE\n\nEnter a guest order at the till. Share the kitchen code with another device. Tickets synchronize automatically every two seconds.\n\nFree Play and Rush Hour are separate offline modes.",14,MUTED)
+        note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _request_list.add_child(note)
+        return
     if not OrderStore.shift.find_request(selected_request).is_empty():
         if str(OrderStore.shift.find_request(selected_request)["state"]) != "WAITING":
             selected_request = ""
@@ -479,6 +516,10 @@ func _select_request(id: String) -> void:
     _switch_screen("ORDER")
 
 func _place_order() -> void:
+    if KitchenSync.active:
+        _submitted_cart = OrderStore.cart.duplicate()
+        KitchenSync.submit(_submitted_cart,_name.text,_table.text)
+        return
     var id: int = OrderStore.place_order(_name.text,_table.text,selected_request)
     if id < 0:
         _play("error")
@@ -512,7 +553,8 @@ func _build_kitchen() -> HBoxContainer:
 func _refresh_kitchen() -> void:
     for status in _tickets:
         _clear(_tickets[status])
-    for order in OrderStore.orders:
+    var visible_orders: Array[Dictionary] = KitchenSync.orders if KitchenSync.active else OrderStore.orders
+    for order in visible_orders:
         var p: PanelContainer = _panel(BG)
         var c: VBoxContainer = _column(8)
         p.add_child(c)
@@ -524,17 +566,26 @@ func _refresh_kitchen() -> void:
             c.add_child(_label("%d × %s" % [int(line["qty"]),line["name"]],14))
         c.add_child(_label("Rs %d" % int(order["total"]),17,CORAL))
         if str(order["status"]) == "DONE":
-            c.add_child(_label("✓ SERVED  +%d XP" % int(order.get("xp",25)),13,GREEN))
+            c.add_child(_label("SERVED" if KitchenSync.active else "SERVED  +%d XP" % int(order.get("xp",25)),13,GREEN))
         else:
-            c.add_child(_button("Start preparing" if str(order["status"]) == "NEW" else "Mark done ✓",func(): _advance(id),true,"Advance_%d" % id))
+            var advance: Button = _button("Start preparing" if str(order["status"]) == "NEW" else "Mark done",func(): _advance(id),true,"Advance_%d" % id)
+            advance.disabled = KitchenSync.active and (KitchenSync.role != "KITCHEN" or KitchenSync.busy)
+            c.add_child(advance)
         _tickets[order["status"]].add_child(p)
     for status in _tickets:
         if _tickets[status].get_child_count() == 0:
             var empty: Label = _label({"NEW":"The printer is quiet.\nOrders appear here as soon as they're sent.","PREPARING":"Room on the counter.\nStart a new ticket to get cooking.","DONE":"Happy tables ahead.\nFinish a ticket to earn XP."}[status],14,MUTED)
+            if status == "DONE" and KitchenSync.active:
+                empty.text = "Happy tables ahead.\nCompleted tickets stay here."
             empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
             _tickets[status].add_child(empty)
 
 func _advance(id: int) -> void:
+    if KitchenSync.active:
+        for order in KitchenSync.orders:
+            if int(order["id"]) == id:
+                KitchenSync.advance(id,str(order["status"]))
+                return
     if OrderStore.advance_order(id):
         _play("done")
         _notify("Ticket #%d updated. %d served · Rs %d earned." % [id,OrderStore.served_count,OrderStore.earnings])
@@ -560,9 +611,35 @@ func _play(id: String) -> void:
         _audio.play()
 
 func _ask_shift(mode: String) -> void:
+    if KitchenSync.active:
+        _notify("Disconnect devices before starting an offline shift.")
+        return
     _next_mode = mode
     _restart.dialog_text = "Start %s? Current tickets and cart will be cleared. Your lifetime XP stays.\n\n%s" % ["Rush Hour" if mode == "RUSH" else "Free Play","Serve five exact customer requests in three minutes. Keep an eye on patience!" if mode == "RUSH" else "No clock, no pressure. Explore the till and kitchen at your pace."]
     _restart.popup_centered(Vector2i(440,230))
+
+func _style_dialog(dialog: AcceptDialog) -> void:
+    var skin := Theme.new()
+    skin.default_font_size = 14
+    skin.set_stylebox("panel","AcceptDialog",_box(PAPER,LINE,8,16))
+    var border: StyleBoxFlat = _box(INK,INK,8,12)
+    border.expand_margin_top = 26
+    skin.set_stylebox("embedded_border","Window",border)
+    skin.set_color("title_color","Window",PAPER)
+    skin.set_color("font_color","Label",INK)
+    skin.set_color("font_color","Button",INK)
+    skin.set_color("font_hover_color","Button",INK)
+    skin.set_color("font_pressed_color","Button",INK)
+    skin.set_stylebox("normal","Button",_box(BG,LINE,6,9))
+    skin.set_stylebox("hover","Button",_box(Color("ecd5ae"),GOLD,6,9))
+    skin.set_stylebox("pressed","Button",_box(Color("dec59b"),GOLD,6,9))
+    dialog.theme = skin
+    var ok: Button = dialog.get_ok_button()
+    ok.custom_minimum_size = Vector2(90,38)
+    ok.add_theme_stylebox_override("normal",_box(CORAL,CORAL,6,9))
+    ok.add_theme_stylebox_override("hover",_box(Color("bd6653"),GOLD,6,9))
+    ok.add_theme_color_override("font_color",PAPER)
+    ok.add_theme_color_override("font_hover_color",PAPER)
 
 func _start_shift() -> void:
     _shown_result = ""
@@ -625,6 +702,76 @@ func _build_dialogs() -> void:
         _reset.popup_centered()
     ,false,"ResetProgress"))
     add_child(_options)
+    _sync_dialog = AcceptDialog.new()
+    _sync_dialog.name = "SyncDialog"
+    _sync_dialog.title = "A till here. A kitchen over there."
+    var sync: VBoxContainer = _column(10)
+    sync.custom_minimum_size.x = 500
+    _sync_dialog.add_child(sync)
+    var help: Label = _label("Create a till room, then paste its kitchen code on a second device. Room credentials last seven days and are kept in memory. Keep the code private.",14,MUTED)
+    help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    help.custom_minimum_size.x = 500
+    sync.add_child(help)
+    _sync_status = _label(KitchenSync.status,14,GREEN)
+    _sync_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _sync_status.custom_minimum_size.x = 500
+    sync.add_child(_sync_status)
+    sync.add_child(_label("SERVER",11,GREEN))
+    _sync_endpoint = _input_field("HTTPS service URL","SyncEndpoint")
+    _sync_endpoint.max_length = 200
+    _sync_endpoint.text = KitchenSync.endpoint
+    sync.add_child(_sync_endpoint)
+    sync.add_child(_button("Create till room",func():
+        if KitchenSync.configure(_sync_endpoint.text):
+            KitchenSync.create_room()
+    ,true,"CreateRoom"))
+    sync.add_child(_label("KITCHEN CODE FROM THIS TILL",11,GREEN))
+    _sync_code = _input_field("Create a room to get its code","PairingCode")
+    _sync_code.max_length = 120
+    _sync_code.editable = false
+    sync.add_child(_sync_code)
+    sync.add_child(_button("Copy kitchen code",func():
+        if not KitchenSync.kitchen_code.is_empty():
+            DisplayServer.clipboard_set(KitchenSync.kitchen_code)
+            _notify("Kitchen code copied. Share only with your kitchen device.")
+    ,false,"CopyCode"))
+    sync.add_child(_label("JOIN AS KITCHEN",11,GREEN))
+    _sync_input = _input_field("Paste the complete kitchen code","JoinCode")
+    _sync_input.max_length = 120
+    var join_row: HBoxContainer = _row()
+    _sync_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    join_row.add_child(_sync_input)
+    join_row.add_child(_button("Paste",_paste_code,false,"PasteCode"))
+    sync.add_child(join_row)
+    sync.add_child(_button("Join kitchen",func():
+        if KitchenSync.configure(_sync_endpoint.text):
+            KitchenSync.join_room(_sync_input.text)
+    ,false,"JoinRoom"))
+    sync.add_child(_button("Disconnect · return to offline",func():
+        KitchenSync.disconnect_room()
+        _sync_input.clear()
+        _sync_dialog.hide()
+    ,false,"Disconnect"))
+    add_child(_sync_dialog)
+    for dialog in [_restart,_reset,_results,_options,_sync_dialog]:
+        _style_dialog(dialog)
 
 func _open_sync() -> void:
-    _notify("Online service is being configured. Offline orders are saved here.")
+    _sync_dialog.popup_centered(Vector2i(550,570))
+
+func _paste_code() -> void:
+    if OS.has_feature("web"):
+        var navigator: JavaScriptObject = JavaScriptBridge.get_interface("navigator")
+        navigator.clipboard.readText().then(_clipboard_success,_clipboard_failure)
+    else:
+        _clipboard_pasted([DisplayServer.clipboard_get()])
+
+func _clipboard_pasted(arguments: Array) -> void:
+    if arguments.is_empty():
+        return
+    _sync_input.text = str(arguments[0]).strip_edges().left(120)
+    _sync_input.grab_focus()
+    _notify("Kitchen code pasted. Choose Join kitchen to connect.")
+
+func _clipboard_denied(_arguments: Array) -> void:
+    _notify("Clipboard access was declined. Paste with your browser's keyboard shortcut.")

@@ -31,7 +31,7 @@ export default{async fetch(request,env){
  const send=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:cors(origin)});
  if(!allowedOrigin(origin))return new Response('Origin denied',{status:403});
  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors(origin)});
- if(url.pathname==='/'||url.pathname==='/api/health')return send({service:'CAFÉ SHIFT kitchen',version:1,storage:'D1',transport:'HTTPS polling',ready:!!env.DB});
+ if(url.pathname==='/'||url.pathname==='/api/health')return send({service:'CAFÉ SHIFT kitchen',version:1,storage:env.storageName||'SQLite',transport:'HTTPS polling',ready:!!env.DB});
  if(!env.DB)return send({error:'Database unavailable.'},503);
  try{
   const db=env.DB,now=Math.floor(Date.now()/1000);
@@ -61,8 +61,11 @@ export default{async fetch(request,env){
   if(request.method==='POST'&&url.pathname.endsWith('/orders')){
    if(role!=='POS')return send({error:'Only the till can create orders.'},403);
    const data=await body(request);
+   if(!data||typeof data!=='object'||Array.isArray(data))return send({error:'Expected an order object.'},400);
    if(typeof data.nonce!=='string'||!/^[a-f0-9]{32}$/.test(data.nonce))return send({error:'Invalid request key.'},400);
    let validated;try{validated=validateItems(data.items);}catch(e){return send({error:e.message},400);}
+   const existing=await db.prepare('SELECT * FROM orders WHERE room_id=? AND nonce=?').bind(roomId,data.nonce).first();
+   if(existing)return send({order:ticket(existing)},201);
    const count=await db.prepare('SELECT COUNT(*) AS n FROM orders WHERE room_id=?').bind(roomId).first();
    if(count.n>=100)return send({error:'This room has reached 100 tickets. Create a fresh room.'},429);
    await db.prepare('INSERT INTO orders (room_id,nonce,customer,table_name,items,total,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(room_id,nonce) DO NOTHING').bind(roomId,data.nonce,clean(data.customer,28,'Guest'),clean(data.table,8,'Takeaway'),JSON.stringify(validated.lines),validated.total,new Date().toISOString()).run();
@@ -70,7 +73,7 @@ export default{async fetch(request,env){
   }
   if(request.method==='PATCH'&&match[2]){
    if(role!=='KITCHEN')return send({error:'Only the kitchen can advance tickets.'},403);
-   const data=await body(request),next={NEW:'PREPARING',PREPARING:'DONE'}[data.expected_status];
+   const data=await body(request),next=data?.expected_status==='NEW'?'PREPARING':data?.expected_status==='PREPARING'?'DONE':null;
    if(!next)return send({error:'Invalid transition.'},409);
    const result=await db.prepare('UPDATE orders SET status=? WHERE id=? AND room_id=? AND status=?').bind(next,Number(match[2]),roomId,data.expected_status).run();
    if(result.meta.changes!==1)return send({error:'Ticket already changed. Refreshing its status.'},409);

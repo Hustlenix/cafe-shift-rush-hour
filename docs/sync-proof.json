@@ -1,0 +1,21 @@
+{
+  "executed_at_utc": "2026-10-13T15:24:44.165903+00:00",
+  "endpoint": "https://cafe-shift-rush-hour.vercel.app",
+  "transport": "HTTPS",
+  "independent_processes": true,
+  "clients": [
+    {
+      "client": "POS",
+      "pid": 21660,
+      "passed": true,
+      "output": "Godot Engine v4.7.1.stable.official.a13da4feb - https://godotengine.org\n\nStarting independent POS client\nPOS created room in 823 ms\nPASS: independent POS process automatically received DONE in 4341 ms\n"
+    },
+    {
+      "client": "KITCHEN",
+      "pid": 28824,
+      "passed": true,
+      "output": "Godot Engine v4.7.1.stable.official.a13da4feb - https://godotengine.org\n\nStarting independent KITCHEN client\nKitchen process automatically received NEW ticket; total Rs 470\nKitchen process received PREPARING status\nPASS: independent kitchen process completed its ticket\n"
+    }
+  ],
+  "passed": true
+}

@@ -1,6 +1,6 @@
 extends Node
 ## All order and cart state lives here so switching screens never loses orders.
-## This is a local, single-device demo; cross-device realtime needs a server.
+## Offline saves and progression; KitchenSync owns separate remote tickets.
 
 signal cart_changed
 signal orders_changed

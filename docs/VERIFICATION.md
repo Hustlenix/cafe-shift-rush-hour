@@ -14,8 +14,24 @@ Import reported `The function signature doesn't match the parent. Parent signatu
 
 The GUI pass found and repaired wrapping-induced layout expansion, missing customer-card attachment, and competing exclusive dialogs. Final test exit was clean. Actual viewport images: `docs/screenshots/till.png`, `kitchen.png`, `rush-hour.png`.
 
-`backend/tests/security.mjs`: **PASS: 26 backend authorization, validation, idempotency and transition checks (real SQLite fixture)**. This invokes Worker request handling with a SQLite-backed D1 adapter. It does not prove a deployed D1 instance or two-device operation.
+`backend/tests/security.mjs`: **PASS: 30 backend authorization, validation, idempotency and transition checks (real SQLite fixture)**. This invokes the shared API handler against real SQLite, including invalid enum values and retrying an order when the room is full.
+
+## Live synchronization
+
+The Vercel API at `https://cafe-shift-rush-hour.vercel.app/api/health` responds with `ready: true` and `storage: Neon Postgres`. The real production schema was applied and verified. Production uses a parameterized Postgres adapter; the SQLite fixture is a separate development path.
+
+`python tools/test_network.py --endpoint https://cafe-shift-rush-hour.vercel.app`: **PASS in both independent Godot processes**. The actual process IDs and outputs are in [sync-proof.json](sync-proof.json). The kitchen automatically received New (two lattes + one chai, Rs 470), moved it through Preparing and Done, and the POS automatically received Done in **4,341 ms**. The room was revoked afterward. Only the pairing credential was handed between processes; no ticket state or model was shared.
+
+The Windows console wrapper stalled when its output was piped. The runner now writes each process's output to its own file and reads those files after exit. Credentials pass through a unique private temporary handoff/environment and never appear in commands, logs, evidence, URLs, source or the exported game.
+
+Two Web runtime instances also passed the full visible flow: create till room, copy code, Paste on the kitchen, join, submit Ada's Rs 470 ticket #7, Start preparing, Mark done, and automatically receive Done at the till. Screenshots show both roles with the same completed ticket. The browser test found a paste issue and led to an explicit asynchronous Clipboard API button. No browser errors/warnings appeared in either client after the corrected flow.
+
+## Hosted Web game
+
+The single-thread Compatibility Web export loads at [the public demo](https://cafe-shift-rush-hour.vercel.app/). A real hosted order was submitted, prepared and completed. Refresh preserved the completed local ticket, **41 XP**, and **1 / 5 served**. The original build's missing glyphs were replaced with readable text; pairing dialogs have a contrasting title bar and clear controls.
+
+`tools/verify_live_export.py` checks the hosted HTML, JavaScript, WASM, PCK and both audio worklet files against local SHA-256 values. Its report is separate from the browser gameplay test. The release archive contains compiled runtime files and instructions, with no raw paid asset pack.
 
 ## Honest boundaries
 
-No browser release or live synchronization has been verified yet. No PIXL journal or claimed development duration has been created. Existing Hackatime endpoint remains unchanged. Physical touch/controller QA and mobile layout QA remain outstanding.
+No PIXL journal or claimed development duration was created. AI assistance is documented. Existing Hackatime endpoint remains unchanged; automated edits were not converted into synthetic human hours. Both synchronization proofs used independent clients on one computer. A physical phone, touchscreen, controller and loss-of-connectivity recovery on an actual mobile network have not been tested. Rooms expire in seven days; tokens remain in memory, so refreshing the till requires a fresh room.

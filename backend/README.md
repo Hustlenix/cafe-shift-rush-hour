@@ -1,28 +1,21 @@
-# Sites Worker ESM starter
+# Café kitchen service
 
-Use this starter for a static microsite, click counter, or simple internal UI whose state is browser-scoped. It has no dependencies and needs no install.
+Production runs through `api/index.mjs` on Vercel and stores rooms/tickets in Lakebase Postgres on Neon. `worker/index.js` is the shared request handler; `neon_adapter.mjs` binds SQL parameters and executes atomic transactions.
 
-Edit `worker/index.js`, then publish through the Sites hosting workflow with this starter's build and validation in `commands`.
+The game never receives the database URL. A till creates a room with separate random POS and kitchen credentials. Only SHA-256 hashes are stored in the rooms table. The POS credential submits orders; the kitchen credential advances New → Preparing → Done. Every price comes from the server menu. Submission uses a nonce for safe retries, including when the room reaches capacity. Status changes compare the expected previous status atomically.
 
-The build copies only `worker/index.js` and `.openai/hosting.json`. Do not add standalone asset files. Embed any essential raster bytes in `worker/index.js` and serve or reference them as a data URL.
+Rooms expire in seven days, with 100 tickets per room and 1,000 active rooms. CORS permits the public game, the owner's GitHub Pages origin, and local development. Native clients send credentials in an Authorization header over HTTPS. No payment processing occurs.
 
-Pass these argument arrays as `commands`:
-
-```json
-[
-  ["bash", "scripts/build.sh"],
-  ["node", "scripts/validate-artifact.mjs"]
-]
+```sh
+npm ci
+vercel env pull .env.local
+npm run db:migrate
+npm run test:backend
+npm run dev:backend
 ```
 
-The deterministic build produces:
+Run these from the repository root. Migration source is `migrations/001_postgres.sql`; use the direct `DATABASE_URL_UNPOOLED` connection for migrations and pooled `DATABASE_URL` for application queries. Keep the environment file ignored.
 
-```text
-dist/
-├── .openai/
-│   └── hosting.json
-└── server/
-    └── index.js
-```
+The development server binds only to `127.0.0.1:8790` with a real SQLite file under ignored `work/`. `drizzle/0000_cafe.sql` supplies that fixture schema, separate from live Postgres.
 
-`dist/server/index.js` is an ES module with a default export containing `fetch(request, env, ctx)`. Edit `worker/index.js`, not the generated file under `dist/`.
+`tests/security.mjs` checks real SQLite-backed API behavior. `tools/test_network.py --endpoint https://cafe-shift-rush-hour.vercel.app` proves the actual live service with two independent Godot processes, then revokes the temporary test room. Sanitized client logs are in `docs/sync-proof.json`.

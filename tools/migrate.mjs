@@ -1,0 +1,10 @@
+import {neon} from '@neondatabase/serverless';
+import {readFile} from 'node:fs/promises';
+if(!process.env.DATABASE_URL)throw new Error('Load the provisioned Vercel environment before migrating.');
+const sql=neon(process.env.DATABASE_URL_UNPOOLED||process.env.DATABASE_URL);
+const text=await readFile(new URL('../backend/migrations/001_postgres.sql',import.meta.url),'utf8');
+const statements=text.split(';').map(s=>s.trim()).filter(Boolean);
+await sql.transaction(statements.map(s=>sql.query(s,[])));
+const result=await sql`SELECT COUNT(*)::int AS table_count FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('rooms','orders')`;
+if(result[0].table_count!==2)throw new Error('Schema verification failed.');
+console.log('PASS: cafe rooms and orders schema applied and verified in Neon Postgres.');

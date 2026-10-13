@@ -1,0 +1,9 @@
+.git/
+.godot/
+.env*
+work/
+node_modules/
+backend/dist/
+.agents/
+skills-lock.json
+builds/web/*.import

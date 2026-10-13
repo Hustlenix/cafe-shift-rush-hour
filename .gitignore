@@ -9,3 +9,6 @@ work/
 node_modules/
 .env*
 *.log
+.agents/
+skills-lock.json
+docs/**/*.import

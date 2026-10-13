@@ -1,0 +1,13 @@
+{
+  "name": "cafe-shift-rush-hour",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": "24.x"},
+  "scripts": {
+    "test:backend": "node backend/tests/security.mjs",
+    "dev:backend": "node backend/local-server.mjs",
+    "db:migrate": "node --env-file=.env.local tools/migrate.mjs"
+  },
+  "dependencies": {"@neondatabase/serverless": "1.2.0"}
+}
