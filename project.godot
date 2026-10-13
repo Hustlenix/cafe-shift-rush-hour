@@ -1,0 +1,22 @@
+; Godot 4.3+ project - open this directory with Godot's Import button.
+config_version=5
+
+[application]
+config/name="Cafe Shift | Pixl Trial"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+
+[autoload]
+OrderStore="*res://scripts/order_store.gd"
+
+[display]
+window/size/viewport_width=1360
+window/size/viewport_height=860
+window/size/window_width_override=1360
+window/size/window_height_override=860
+window/stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
