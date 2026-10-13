@@ -22,7 +22,7 @@ A clean archive of the tracked source, without `assets/licensed/`, imported and 
 
 The Vercel API at `https://cafe-shift-rush-hour.vercel.app/api/health` responds with `ready: true` and `storage: Neon Postgres`. The real production schema was applied and verified. Production uses a parameterized Postgres adapter; the SQLite fixture is a separate development path.
 
-`python tools/test_network.py --endpoint https://cafe-shift-rush-hour.vercel.app`: **PASS in both independent Godot processes**. The actual process IDs and outputs are in [sync-proof.json](sync-proof.json). The kitchen automatically received New (two lattes + one chai, Rs 470), moved it through Preparing and Done, and the POS automatically received Done in **4,341 ms**. The room was revoked afterward. Only the pairing credential was handed between processes; no ticket state or model was shared.
+`python tools/test_network.py --endpoint https://cafe-shift-rush-hour.vercel.app`: **PASS in both independent Godot processes**. Actual process IDs, timing and outputs are in [sync-proof.json](sync-proof.json). The kitchen automatically received New (two lattes + one chai, Rs 470), moved it through Preparing and Done, and the POS automatically received Done. The server acknowledged revocation of the temporary test room afterward. Only the pairing credential was handed between processes; no ticket state or model was shared.
 
 The Windows console wrapper stalled when its output was piped. The runner now writes each process's output to its own file and reads those files after exit. Credentials pass through a unique private temporary handoff/environment and never appear in commands, logs, evidence, URLs, source or the exported game.
 

@@ -28,7 +28,7 @@ On 2026-10-13 the project was imported and tested with Godot 4.7.1 on Windows:
 - **61 core checks pass:** totals, quantities, exact recipes, duplicate rewards, five-order victory, timer failure, persistence, invalid save lines, duplicate restored IDs, and future-schema protection.
 - **49 native GUI pointer activations pass**, plus keyboard kitchen-tab activation. These exercise categories, all nine Add buttons, every quantity button, cart clearing, order placement, preparation, completion, customer selection, shift controls, options, and reset confirmation.
 - **30 backend security checks pass** against a real SQLite fixture: role enforcement, room isolation, menu/quantity validation, authoritative prices, idempotent order submission including a full room, and atomic status transitions.
-- **Two independent Godot processes pass against the deployed HTTPS API and real Postgres database.** The till sends two lattes and one chai (Rs 470); the kitchen receives New, advances Preparing and Done, and the till sees Done automatically. Recorded round trip: 4,341 ms. See [the actual client logs](docs/sync-proof.json).
+- **Two independent Godot processes pass against the deployed HTTPS API and real Postgres database.** The till sends two lattes and one chai (Rs 470); the kitchen receives New, advances Preparing and Done, and the till sees Done automatically. Actual process IDs, timing and room-revocation acknowledgement are in [the client logs](docs/sync-proof.json).
 - **Two Web clients also complete the actual UI flow:** create room, copy/paste code, join kitchen, submit Ada's Rs 470 ticket, prepare, complete and automatically receive Done at the till. [Till proof](docs/screenshots/web-sync-done-pos.jpg) · [kitchen proof](docs/screenshots/web-sync-done-kitchen.jpg).
 
 Screenshots in `docs/screenshots/` are captured from the running Godot game by the UI test. They are not mockups.
@@ -91,7 +91,7 @@ The offline game runs without keys or services. Browser local saves depend on st
 
 ## AI assistance and tracking
 
-The supplied starter was AI-assisted. OpenAI Codex audited and repaired it, wrote and revised the game/UI/backend code, authored the original icon/chime generation script, ran the tests, and captured the screenshots. LimeZu authored the purchased art. This README does not claim the human independently wrote or tested AI-authored code.
+OpenAI Codex audited and repaired the supplied starter, wrote and revised the game/UI/backend code, authored the original icon/chime generation script, ran the tests, and captured the screenshots. LimeZu authored the purchased art. This README does not claim the human independently wrote or tested AI-authored code.
 
 The existing Hackatime configuration was inspected read-only and still points to Hack Club's endpoint. It was not rewritten. Automated work is not represented as human development hours; no synthetic heartbeats or journal entries were submitted.
 

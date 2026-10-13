@@ -81,7 +81,11 @@ func _advance(id: int, status: String) -> void:
     await sync.advance(id,status)
 
 func _finish_pos() -> void:
-    await sync._api("/api/rooms/"+sync.room,HTTPClient.METHOD_DELETE)
+    var closed: Dictionary = await sync._api("/api/rooms/"+sync.room,HTTPClient.METHOD_DELETE)
+    if not closed.get("ok",false) or not closed.get("closed",false):
+        fail("Temporary test room could not be revoked.")
+        return
+    print("PASS: temporary test room revocation acknowledged")
     sync.disconnect_room()
     quit(0)
 
