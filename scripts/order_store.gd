@@ -4,6 +4,7 @@ extends Node
 
 signal cart_changed
 signal orders_changed
+signal game_changed
 
 const SAVE_PATH: String = "user://cafe_shift_save.json"
 const MENU = [
@@ -23,9 +24,42 @@ var orders: Array[Dictionary] = []
 var next_order_id: int = 101
 var served_count: int = 0
 var earnings: int = 0
+var xp: int = 0
+var save_path: String = SAVE_PATH
+var persistence_enabled: bool = true
+var last_error: String = ""
+var shift: RefCounted = preload("res://scripts/shift_rules.gd").new()
+var _save_clock: float = 0.0
 
 func _ready() -> void:
     load_data()
+    if shift.requests.is_empty() and shift.active:
+        shift.welcome()
+
+func _process(delta: float) -> void:
+    if shift.tick(delta):
+        game_changed.emit()
+        save_data()
+    _save_clock += delta
+    if _save_clock >= 5 and shift.mode == "RUSH" and shift.active:
+        _save_clock = 0
+        save_data()
+
+func start_shift(mode: String) -> void:
+    cart.clear()
+    orders.clear()
+    served_count = 0
+    earnings = 0
+    shift.start(mode)
+    save_data()
+    cart_changed.emit()
+    orders_changed.emit()
+    game_changed.emit()
+
+func welcome_customer() -> void:
+    shift.welcome()
+    save_data()
+    game_changed.emit()
 
 func find_product(product_id: String) -> Dictionary:
     for product in MENU:
@@ -36,7 +70,7 @@ func find_product(product_id: String) -> Dictionary:
 func add_item(product_id: String) -> void:
     if find_product(product_id).is_empty():
         return
-    cart[product_id] = int(cart.get(product_id, 0)) + 1
+    cart[product_id] = mini(99, int(cart.get(product_id, 0)) + 1)
     save_data()
     cart_changed.emit()
 
@@ -47,7 +81,7 @@ func change_quantity(product_id: String, delta: int) -> void:
     if count <= 0:
         cart.erase(product_id)
     else:
-        cart[product_id] = count
+        cart[product_id] = mini(99, count)
     save_data()
     cart_changed.emit()
 
@@ -70,9 +104,21 @@ func cart_total() -> int:
             total += int(product["price"]) * int(cart[product_id])
     return total
 
-func place_order(customer: String, table_number: String) -> int:
+func place_order(customer: String, table_number: String, request_id: String = "") -> int:
+    last_error = ""
     if cart.is_empty():
+        last_error = "Add something delicious to the cart first."
         return -1
+    if shift.mode == "RUSH" and (not shift.active or request_id.is_empty()):
+        last_error = "Select a waiting customer during Rush Hour."
+        return -1
+    if not request_id.is_empty():
+        if not shift.matches(request_id, cart):
+            last_error = "That cart does not match the request. Check items and quantities."
+            return -1
+        var request: Dictionary = shift.find_request(request_id)
+        customer = str(request["name"])
+        table_number = str(request["table"])
     var items: Array[Dictionary] = []
     for product_id in cart.keys():
         var product: Dictionary = find_product(str(product_id))
@@ -84,10 +130,13 @@ func place_order(customer: String, table_number: String) -> int:
     if items.is_empty():
         return -1
     var order_id: int = _insert_order(items, customer, table_number)
+    if not request_id.is_empty():
+        shift.sent(request_id, order_id)
     cart.clear()
     save_data()
     cart_changed.emit()
     orders_changed.emit()
+    game_changed.emit()
     return order_id
 
 func add_walk_in() -> int:
@@ -137,10 +186,14 @@ func advance_order(order_id: int) -> bool:
             orders[i]["status"] = "DONE"
             served_count += 1
             earnings += int(orders[i]["total"])
+            var reward: int = 25 + shift.completed(order_id)
+            xp += reward
+            orders[i]["xp"] = reward
         else:
             return false
         save_data()
         orders_changed.emit()
+        game_changed.emit()
         return true
     return false
 
@@ -157,41 +210,86 @@ func reset_demo() -> void:
     next_order_id = 101
     served_count = 0
     earnings = 0
+    xp = 0
+    shift.start("FREE")
     save_data()
     cart_changed.emit()
     orders_changed.emit()
+    game_changed.emit()
 
 func save_data() -> void:
-    var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+    if not persistence_enabled:
+        return
+    var file: FileAccess = FileAccess.open(save_path + ".tmp", FileAccess.WRITE)
     if file == null:
         push_warning("Save failed: " + str(FileAccess.get_open_error()))
         return
     file.store_string(JSON.stringify({
-        "version": 1,
+        "version": 2,
         "cart": cart,
         "orders": orders,
         "next_order_id": next_order_id,
         "served_count": served_count,
-        "earnings": earnings
+        "earnings": earnings,
+        "xp": xp,
+        "shift": shift.snapshot()
     }, "  "))
     file.close()
+    var error: Error = DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path + ".tmp"), ProjectSettings.globalize_path(save_path))
+    if error != OK:
+        last_error = "Could not save progress on this device."
+        push_warning(last_error)
 
 func load_data() -> void:
-    if not FileAccess.file_exists(SAVE_PATH):
+    if not persistence_enabled or not FileAccess.file_exists(save_path):
         return
-    var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+    var raw: Variant = JSON.parse_string(FileAccess.get_file_as_string(save_path))
     if typeof(raw) != TYPE_DICTIONARY:
         push_warning("Ignoring invalid save file")
         return
     var state: Dictionary = raw
+    if int(state.get("version", 1)) not in [1, 2]:
+        last_error = "This save belongs to a newer version. It was left untouched."
+        persistence_enabled = false
+        return
+    cart.clear()
+    orders.clear()
     if typeof(state.get("cart", null)) == TYPE_DICTIONARY:
         for key in state["cart"].keys():
-            if not find_product(str(key)).is_empty():
-                cart[str(key)] = maxi(0, int(state["cart"][key]))
+            var quantity: Variant = state["cart"][key]
+            if not find_product(str(key)).is_empty() and typeof(quantity) in [TYPE_INT, TYPE_FLOAT] and int(quantity) > 0:
+                cart[str(key)] = mini(99, int(quantity))
     if typeof(state.get("orders", null)) == TYPE_ARRAY:
         for candidate in state["orders"]:
-            if typeof(candidate) == TYPE_DICTIONARY and candidate.has("id") and candidate.has("items"):
-                orders.append(candidate)
+            if typeof(candidate) != TYPE_DICTIONARY or typeof(candidate.get("id")) not in [TYPE_INT, TYPE_FLOAT] or typeof(candidate.get("items")) != TYPE_ARRAY:
+                continue
+            if int(candidate["id"]) < 101 or str(candidate.get("status", "")) not in ["NEW", "PREPARING", "DONE"]:
+                continue
+            var clean_items: Array[Dictionary] = []
+            var total: int = 0
+            for item in candidate["items"]:
+                if typeof(item) != TYPE_DICTIONARY or typeof(item.get("qty")) not in [TYPE_INT, TYPE_FLOAT]:
+                    continue
+                var product: Dictionary = find_product(str(item.get("id", "")))
+                if product.is_empty() or int(item["qty"]) < 1:
+                    continue
+                var qty: int = mini(99, int(item["qty"]))
+                clean_items.append({"id": product["id"], "name": product["name"], "price": product["price"], "qty": qty})
+                total += int(product["price"]) * qty
+            var duplicate_id: bool = false
+            for existing in orders:
+                if int(existing["id"]) == int(candidate["id"]):
+                    duplicate_id = true
+            if clean_items.is_empty() or duplicate_id:
+                continue
+            candidate["items"] = clean_items
+            candidate["total"] = total
+            orders.append(candidate)
     next_order_id = maxi(101, int(state.get("next_order_id", 101)))
     served_count = maxi(0, int(state.get("served_count", 0)))
     earnings = maxi(0, int(state.get("earnings", 0)))
+    xp = maxi(0, int(state.get("xp", served_count * 25)))
+    for order in orders:
+        next_order_id = maxi(next_order_id, int(order["id"]) + 1)
+    if typeof(state.get("shift")) == TYPE_DICTIONARY:
+        shift.restore(state["shift"])
