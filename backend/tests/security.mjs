@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFile} from 'node:fs/promises';
+import worker from '../worker/index.js';
+const sql=await readFile(new URL('../drizzle/0000_cafe.sql',import.meta.url),'utf8');
+const sqlite=new DatabaseSync(':memory:');sqlite.exec(sql.replaceAll('--> statement-breakpoint',''));
+const DB={prepare(query){return{values:[],bind(...v){this.values=v;return this;},async first(){return sqlite.prepare(query).get(...this.values)||null;},async all(){return{results:sqlite.prepare(query).all(...this.values)};},async run(){const r=sqlite.prepare(query).run(...this.values);return{meta:{changes:r.changes}};}};},async batch(s){return Promise.all(s.map(q=>q.run()));}};
+let checks=0;
+async function call(path,method='GET',data,token,origin){
+ const response=await worker.fetch(new Request('https://fixture.invalid'+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(data?{'Content-Type':'application/json'}:{}),...(origin?{Origin:origin}:{})},body:data?JSON.stringify(data):undefined}),{DB});
+ let json;try{json=await response.json();}catch{}return{status:response.status,json};
+}
+function eq(a,b){assert.equal(a,b);checks++;}
+const{json:room,status}=await call('/api/rooms','POST');eq(status,201);
+const path='/api/rooms/'+room.room,kitchen=room.kitchen_code.split('.')[1];
+eq((await call(path+'/orders')).status,401);
+eq((await call(path+'/orders','GET',null,'a'.repeat(48))).status,401);
+eq((await call(path+'/orders','GET',null,room.token,'https://evil.invalid')).status,403);
+eq((await call(path+'/orders','GET',null,room.token,'https://hustlenix.github.io')).status,200);
+const draft={nonce:'a'.repeat(32),customer:'Test',table:'7',items:[{id:'latte',qty:2,price:1},{id:'chai',qty:1,price:-2}]};
+eq((await call(path+'/orders','POST',draft,kitchen)).status,403);
+eq((await call(path+'/orders','POST',{...draft,items:[{id:'ghost',qty:1}]},room.token)).status,400);
+for(const qty of[0,-1,1.5,100,'2'])eq((await call(path+'/orders','POST',{...draft,items:[{id:'latte',qty}]},room.token)).status,400);
+eq((await call(path+'/orders','POST',{...draft,items:[{id:'latte',qty:1},{id:'latte',qty:1}]},room.token)).status,400);
+const{json:created}=await call(path+'/orders','POST',draft,room.token);eq(created.order.total,470);
+eq((await call(path+'/orders','POST',draft,room.token)).json.order.id,created.order.id);
+eq((await call(path+'/orders','GET',null,kitchen)).json.orders.length,1);
+const ticket=path+'/orders/'+created.order.id;
+eq((await call(ticket,'PATCH',{expected_status:'NEW'},room.token)).status,403);
+eq((await call(ticket,'PATCH',{expected_status:'DONE'},kitchen)).status,409);
+eq((await call(ticket,'PATCH',{expected_status:'NEW'},kitchen)).json.order.status,'PREPARING');
+eq((await call(ticket,'PATCH',{expected_status:'NEW'},kitchen)).status,409);
+eq((await call(ticket,'PATCH',{expected_status:'PREPARING'},kitchen)).json.order.status,'DONE');
+eq((await call(ticket,'PATCH',{expected_status:'PREPARING'},kitchen)).status,409);
+const{json:other}=await call('/api/rooms','POST');
+eq((await call('/api/rooms/'+other.room+'/orders','GET',null,kitchen)).status,401);
+eq((await call(path,'DELETE',null,kitchen)).status,403);
+eq((await call(path,'DELETE',null,room.token)).status,200);
+eq((await call(path+'/orders','GET',null,kitchen)).status,401);
+sqlite.close();console.log(`PASS: ${checks} backend authorization, validation, idempotency and transition checks (real SQLite fixture)`);
