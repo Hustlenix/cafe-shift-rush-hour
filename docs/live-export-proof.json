@@ -1,0 +1,56 @@
+{
+  "executed_at_utc": "2026-10-13T15:43:28.574960+00:00",
+  "url": "https://cafe-shift-rush-hour.vercel.app",
+  "files": [
+    {
+      "file": "index.html",
+      "http_status": 200,
+      "content_type": "text/html",
+      "bytes": 5613,
+      "sha256": "8789f0a9676ec792931413781918b89b5af126023e2ca1e96077450b27f6c5eb",
+      "matches_local": true
+    },
+    {
+      "file": "index.js",
+      "http_status": 200,
+      "content_type": "application/javascript",
+      "bytes": 279815,
+      "sha256": "68586d6daafc93c6e697b3fb258976874aa7459b8931165ebb1dc3c9614cc42c",
+      "matches_local": true
+    },
+    {
+      "file": "index.wasm",
+      "http_status": 200,
+      "content_type": "application/wasm",
+      "bytes": 39513091,
+      "sha256": "35116f68540ac41acf7d71ea457added91b5e960a9cca3e2acc72918eaf01277",
+      "matches_local": true
+    },
+    {
+      "file": "index.pck",
+      "http_status": 200,
+      "content_type": "application/octet-stream",
+      "bytes": 103716,
+      "sha256": "3941dd0f19df36f2c5c2dd8a21dad1bfda008afa63df6a4403f8432064580c73",
+      "matches_local": true
+    },
+    {
+      "file": "index.audio.worklet.js",
+      "http_status": 200,
+      "content_type": "application/javascript",
+      "bytes": 7298,
+      "sha256": "5b476a9c9ce642c0ee4256436d1bc31d9c38f868aca0f9a8e2a57c18d2dec2a3",
+      "matches_local": true
+    },
+    {
+      "file": "index.audio.position.worklet.js",
+      "http_status": 200,
+      "content_type": "application/javascript",
+      "bytes": 2973,
+      "sha256": "be33985bc7160d6bf9646f259cd86b259cd67b02ccb297ee5c44f8ac84327bc8",
+      "matches_local": true
+    }
+  ],
+  "passed": true,
+  "scope": "Byte identity and runtime MIME; gameplay verified separately in the browser."
+}
