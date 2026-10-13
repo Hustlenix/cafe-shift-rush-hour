@@ -1,120 +1,83 @@
-# Cafe Shift: Rush Hour
+# CAFÉ SHIFT — Rush Hour
 
-A tiny Godot 4 cafe-management prototype built for the Pixl cafe ordering system trial. Unlike a static mockup, the point-of-sale, cart, and kitchen board are connected to one working order state.
+A playable **Godot 4** café game for [PIXL project 1646](https://pixl.hackclub.com/projects/1646). Ring up drinks and bites, print kitchen tickets, prepare orders, and keep the regulars happy.
 
-**Current status:** Godot source prototype. Please open it in Godot and run the smoke checks before you treat it as shipped. The environment used to prepare this starter did not have the Godot executable, so it has **not** been run or web-exported yet.
+![Actual Godot gameplay](docs/screenshots/rush-hour.png)
 
-## What a tester can do
+## Play
 
-1. Open **Order Desk** to browse nine items across Coffee, Tea, Bites, and Desserts.
-2. Search and filter the menu, add items to the cart, and use `+` / `-` for quantity changes.
-3. Enter a customer and table (optional) and select **Send Order to Kitchen**.
-4. Open **Kitchen Board** and see the incoming ticket and each line item.
-5. Press **Start Preparing**, then **Mark Order Done**.
-6. Watch the ticket move between Incoming, In Progress, and Completed. Each completed ticket awards 25 XP and its total is added to shift earnings.
-7. Use **Generate Walk-in** to simulate random NPC customers for a rush-hour test.
-8. Restart the game and see your orders, cart, and shift statistics restored from `user://cafe_shift_save.json`.
-9. Use **Reset Demo** (requires confirmation) to start a fresh shift.
+Open `project.godot` in Godot **4.7.1** and press **F5**. The core uses native Godot Controls and GDScript.
 
-## Requirements
+- **The till:** nine items, four categories, search, quantity controls, cart total, guest/table entry, and order placement.
+- **The kitchen:** submitted tickets move **New → Preparing → Done**. Completion awards XP and sales exactly once.
+- **Free Play:** no timer. Serve customer requests or create custom orders.
+- **Rush Hour:** serve **five exact customer requests in three minutes**. Waiting customers have 65 seconds of patience. Early service earns bonus XP. Submitted tickets stay valid when patience runs out.
+- **Progress:** cart, tickets, lifetime XP and the current shift save locally. Reset requires confirmation. A fresh shift preserves lifetime XP.
+- **Options:** sound effects and reduced motion. Standard buttons support keyboard focus and activation.
 
-- Godot **4.3 or newer**, standard build, GDScript (no C#/.NET build needed)
-- No API keys, backend, or plugins needed for offline/local use
-- Tested target resolution: **1360 × 860** design canvas, desktop-first
+Click **Take order**, read the requested items/quantities, add them from the menu, and send the order. Then open the kitchen, start preparing, and mark it done. A mismatched cart gives feedback without removing its contents.
 
-## How to run
+## Verified status
 
-1. Download or clone this folder.
-2. Launch Godot and choose **Import**, then select `project.godot`.
-3. Open the project and press **F6** from `scenes/main.tscn` or **F5** for the whole project.
-4. Use the Order Desk and Kitchen Board buttons at the top to switch screens.
+On 2026-10-13 the project was imported and tested with Godot 4.7.1 on Windows:
 
-### Run the logic checks (after installing Godot)
+- Original parser failure fixed: the starter's `_input()` form helper collided with Godot's built-in input callback.
+- Original order smoke test passes without leaked objects.
+- **61 core checks pass:** totals, quantities, exact recipes, duplicate rewards, five-order victory, timer failure, persistence, invalid save lines, duplicate restored IDs, and future-schema protection.
+- **49 native GUI pointer activations pass**, plus keyboard kitchen-tab activation. These exercise categories, all nine Add buttons, every quantity button, cart clearing, order placement, preparation, completion, customer selection, shift controls, options, and reset confirmation.
+- **26 backend security checks pass** against a real SQLite fixture: role enforcement, room isolation, menu/quantity validation, authoritative prices, idempotent order submission, and atomic status transitions.
 
-From the project folder run `godot --headless --path . --script res://tests/test_orders.gd`. The smoke test saves and restores any pre-existing local save. A passing result does **not** replace checking the UI visually.
+Screenshots in `docs/screenshots/` are captured from the running Godot game by the UI test. They are not mockups.
 
-### Quick test checklist
+**Still being completed:** live backend deployment, Godot client synchronization, two independent client proof, Web export and public demo verification. Backend fixture tests are not proof of live synchronization. No development hours or PIXL journal entries have been invented.
 
-- [ ] Menu renders nine items and categories/search work
-- [ ] A repeated Add increases quantity, not duplicate broken lines
-- [ ] Minus removes an item when quantity reaches zero
-- [ ] Empty cart cannot be ordered
-- [ ] Order shows in Incoming with correct items and total
-- [ ] New -> Preparing -> Done transitions each work exactly once
-- [ ] XP and sales increase only when order becomes Done
-- [ ] Walk-in order does not alter the normal cart
-- [ ] Restart restores saved orders and cart
-- [ ] Reset Demo clears all state only after confirmation
-- [ ] Exported Web version launches and can complete an order
+## Run tests
+
+```sh
+godot --headless --editor --path . --quit
+godot --headless --path . --script res://tests/test_orders.gd
+godot --headless --path . --script res://tests/test_core.gd
+godot --path . --script res://tests/test_ui.gd
+cd backend
+node tests/security.mjs
+```
+
+The core tests use isolated temporary data. The GUI test disables saving and uses Godot viewport input; it also writes actual gameplay screenshots. Node 24 or newer supports the backend's built-in SQLite test adapter. A passing process exit alone is insufficient for import checks: inspect output for `SCRIPT ERROR` and `ERROR` too.
+
+## Art and licenses
+
+The owner's paid **Modern Interiors** pack by [LimeZu](https://limezu.itch.io/moderninteriors) supplies the café props and six animated regulars. The café layout is composed specifically for this game. Raw paid sprites and the composed paid-art room are ignored by Git because the asset license prohibits redistributing the asset pack. Gameplay screenshots may show the artwork as part of the game.
+
+The public source runs with an original simple room/character fallback when the licensed art is absent. To reproduce the owner's art build using your own licensed pack:
+
+```sh
+python -m pip install pillow
+python tools/import_assets.py --pack "/path/to/moderninteriors-win"
+```
+
+The script composes `assets/licensed/cafe.png` and copies the required animation strips locally. **Do not add `assets/licensed/` to Git.** Food icons and sample chimes in `assets/original/` are original code-authored assets, included with the source.
 
 ## Architecture
 
-```
-project.godot
-scenes/
-  main.tscn          Native Godot Control scene
-scripts/
-  main.gd            Order desk and kitchen UI, input signals
-  order_store.gd     Autoload holding menu, cart, tickets, saves
-tests/
-  test_orders.gd     Optional automated logic smoke test
-AI_BUILD_PROMPT.md  Suggested instructions for your coding AI
-README.md
-```
+| File | Responsibility |
+| --- | --- |
+| `scripts/order_store.gd` | Menu, cart, tickets, XP, authoritative mutation methods, validated atomic local saves |
+| `scripts/shift_rules.gd` | Requests, recipes, patience, arrivals, run goal, bonuses, results |
+| `scripts/main.gd` | Stable native UI, menu/search/cart, kitchen, dialogs, sound |
+| `scripts/cafe_view.gd` | Live café art, customer animation, speech bubbles, steam |
+| `scripts/main_starter.gd` | Preserved repaired starter interface for reference |
+| `backend/worker/index.js` | HTTPS room API with hashed 192-bit role credentials and D1 persistence |
+| `backend/drizzle/0000_cafe.sql` | Versioned database schema |
+| `tests/` | Godot smoke, core and GUI checks |
 
-**Data flow:**
+The offline game runs without keys or services. Browser local saves depend on storage permission; private browsing may discard them. Prices are fictional rupee amounts; no payment processing occurs.
 
-```
-Menu -> cart[id] = quantity -> place_order()
-                              -> orders array: NEW
-Kitchen button -> advance_order(): NEW -> PREPARING -> DONE
-OrderStore signal -> UI refreshes immediately within same running app
-FileAccess -> saved JSON locally after each state change
-```
+## AI assistance and tracking
 
-Menu prices are sample Indian rupee amounts and there is no actual payment processing.
+The supplied starter was AI-assisted. OpenAI Codex audited and repaired it, wrote and revised the game/UI/backend code, authored the original icon/chime generation script, ran the tests, and captured the screenshots. LimeZu authored the purchased art. This README does not claim the human independently wrote or tested AI-authored code.
 
-## Realtime: what is and isn't implemented
+The existing Hackatime configuration was inspected read-only and still points to Hack Club's endpoint. It was not rewritten. Automated work is not represented as human development hours; no synthetic heartbeats or journal entries were submitted.
 
-The order desk and kitchen update **instantly in one running application** via Godot signals. This is not two-device live sync: another browser/device has a separate local save and won't receive those orders. A real cafe's two-device kitchen display needs a shared backend, authentication/roles, and a realtime transport such as Supabase Realtime or a WebSocket server. See the AI prompt for the optional extension. Do not claim cross-device realtime in your submission until it is implemented and tested with two clients.
+## Build and release
 
-## Export a browser demo
-
-1. Install Godot's **Web export template** that matches your Godot editor.
-2. Project > Export > Add > **Web**.
-3. Disable **Use Threads** for a simple static host where cross-origin isolation headers are not configured.
-4. Export to a folder such as `builds/web/index.html`.
-5. Host all generated files together on GitHub Pages or itch.io; don't open `index.html` directly as a `file://` URL.
-6. Actually load the hosted version in a browser, place an order, finish it, and reload it before sharing the link.
-
-Godot Web export docs: https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html
-
-## Pixl shipping checklist
-
-Pixl's published software rules require a **public GitHub repository**, meaningful multiple commits, a working demo link distinct from the repo URL, a real screenshot thumbnail, setup instructions and an honest AI-use disclosure. Document actual tracked progress in your journal. Some trials have hour minimums, which the project dashboard displays. See: https://pixl.hackclub.com/docs/software-requirements
-
-- Keep Hackatime active while *you* genuinely work in the editor/code. Do not fabricate tracked time.
-- If you use OpenCode, maintain your existing Hackatime integration. Don't manually rewrite your `.wakatime.cfg` or switch to the WakaTime.com endpoint.
-- Capture a **real screenshot** of the game running (not an AI mockup) for the project thumbnail.
-- Describe what you actually wrote, debugged, designed and learned in devlogs.
-- Explain how AI helped and which parts you implemented/tested yourself.
-
-### Sample AI disclosure to adapt truthfully
-
-> I used ChatGPT to help scaffold Godot scripts and outline the UI architecture. I reviewed and modified the code, tested the menu/cart/kitchen flow myself in Godot, and iterated on the layout and behavior. [Only retain statements that are true for your project.]
-
-## Further ideas
-
-- Make a drawn 2D customer queue, counter and expressive food sprites using your own original art.
-- Add an actual countdown and customer patience level, with XP earned for timely service.
-- Add item availability / sold-out states and order notes.
-- Add authentic cross-device realtime using a server that validates prices/order transitions.
-- Separate kitchen and POS into two independently running clients, then test sync under reconnect and offline conditions.
-- Add keyboard shortcuts, accessibility checks and adaptive touch-friendly layout.
-
-## Known limitations
-
-- This is a desktop-first prototype; small phone displays may need a responsive redesign.
-- It is a fictional cafe simulation, not a production POS system. No taxes, receipts, payments, customer data handling, or role-based access controls.
-- The same-device signals are immediate but are **not** online multiplayer.
-- This starter has not been executed in Godot by its authoring environment. Confirm it imports and fix any local issues before demo/submission.
+Use the Godot Web export templates matching 4.7.1 and the Compatibility renderer. Disable threads for a static host. Publish all generated files together, then verify menu → cart → kitchen → done and persistence on the hosted build before treating a demo URL as shipped. See [Godot Web export documentation](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html).
