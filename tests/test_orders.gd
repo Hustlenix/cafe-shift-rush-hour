@@ -58,6 +58,7 @@ func _run_tests() -> void:
     elif FileAccess.file_exists(SAVE):
         DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE))
 
+    store.free()
     if errors.is_empty():
         print("PASS: cart, totals, placement, kitchen statuses, scoring and NPC ticket")
         quit(0)

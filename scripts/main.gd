@@ -219,12 +219,12 @@ func _build_order_desk() -> HBoxContainer:
     right.add_child(_label("%d items selected" % OrderStore.cart_item_count(), 13, MUTED))
 
     right.add_child(_label("CUSTOMER NAME", 11, AMBER))
-    var name_input: LineEdit = _input("Guest name (optional)", customer_name)
+    var name_input: LineEdit = _form_input("Guest name (optional)", customer_name)
     name_input.text_changed.connect(func(value: String): customer_name = value)
     right.add_child(name_input)
 
     right.add_child(_label("TABLE / PICKUP", 11, AMBER))
-    var table_input: LineEdit = _input("Table number or takeaway", table_number)
+    var table_input: LineEdit = _form_input("Table number or takeaway", table_number)
     table_input.text_changed.connect(func(value: String): table_number = value)
     right.add_child(table_input)
 
@@ -266,7 +266,7 @@ func _build_order_desk() -> HBoxContainer:
     right.add_child(actions)
     return horizontal
 
-func _input(placeholder: String, current_value: String) -> LineEdit:
+func _form_input(placeholder: String, current_value: String) -> LineEdit:
     var field: LineEdit = LineEdit.new()
     field.placeholder_text = placeholder
     field.text = current_value
