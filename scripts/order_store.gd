@@ -32,8 +32,12 @@ var shift: RefCounted = preload("res://scripts/shift_rules.gd").new()
 var _save_clock: float = 0.0
 
 func _ready() -> void:
+    var has_save: bool = FileAccess.file_exists(save_path)
     load_data()
-    if shift.requests.is_empty() and shift.active:
+    if not has_save and persistence_enabled:
+        # Put a first-time player straight into the five-order challenge.
+        shift.start("RUSH")
+    elif shift.requests.is_empty() and shift.active:
         shift.welcome()
 
 func _process(delta: float) -> void:
@@ -56,10 +60,11 @@ func start_shift(mode: String) -> void:
     orders_changed.emit()
     game_changed.emit()
 
-func welcome_customer() -> void:
-    shift.welcome()
+func welcome_customer() -> String:
+    var request_id: String = shift.welcome()
     save_data()
     game_changed.emit()
+    return request_id
 
 func find_product(product_id: String) -> Dictionary:
     for product in MENU:
@@ -175,7 +180,7 @@ func _insert_order(items: Array[Dictionary], customer: String, table_number: Str
     })
     return order_id
 
-func advance_order(order_id: int) -> bool:
+func advance_order(order_id: int, quality_bonus: int = 0) -> bool:
     for i in range(orders.size()):
         if int(orders[i].get("id", -1)) != order_id:
             continue
@@ -186,9 +191,10 @@ func advance_order(order_id: int) -> bool:
             orders[i]["status"] = "DONE"
             served_count += 1
             earnings += int(orders[i]["total"])
-            var reward: int = 25 + shift.completed(order_id)
+            var reward: int = 25 + shift.completed(order_id) + clampi(quality_bonus, 0, 20)
             xp += reward
             orders[i]["xp"] = reward
+            orders[i]["quality_bonus"] = clampi(quality_bonus, 0, 20)
         else:
             return false
         save_data()

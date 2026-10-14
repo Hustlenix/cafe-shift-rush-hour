@@ -12,6 +12,11 @@ func check(condition: bool, description: String) -> void:
         failures.append(description)
 
 func _run() -> void:
+    var fresh: Node = load("res://scripts/order_store.gd").new()
+    fresh.save_path = "user://new_player_%d.json" % Time.get_ticks_usec()
+    fresh._ready()
+    check(fresh.shift.mode == "RUSH" and fresh.shift.requests.size() == 2,"A first-time player enters an active Rush shift")
+    fresh.free()
     var store: Node = load("res://scripts/order_store.gd").new()
     store.persistence_enabled = false
     check(store.place_order("","") == -1,"Empty cart rejected")
@@ -37,9 +42,15 @@ func _run() -> void:
     check(store.advance_order(id) and store.status_count("DONE") == 1,"Preparing to Done")
     check(not store.advance_order(id),"No duplicate completion")
     check(store.xp == 25 and store.earnings == 190,"XP/revenue once")
+    var quality_id: int = store.place_order(""," ")
+    check(quality_id == -1,"A second empty cart is rejected")
+    store.add_item("cookie")
+    quality_id = store.place_order(""," ")
+    check(store.advance_order(quality_id) and store.advance_order(quality_id, 99),"A timed pour completes its ticket")
+    check(store.xp == 70 and store.orders[0]["quality_bonus"] == 20,"Perfect pour XP is capped and awarded once")
     check(not store.advance_order(98765),"Unknown order rejected")
     store.start_shift("RUSH")
-    check(store.xp == 25,"Starting shift preserves lifetime XP")
+    check(store.xp == 70,"Starting shift preserves lifetime XP")
     check(store.shift.requests.size() == 2,"Rush starts with two regulars")
     store.add_item("cookie")
     check(store.place_order("","","R1") == -1 and store.cart.has("cookie"),"Wrong recipe rejected without losing cart")
@@ -73,6 +84,12 @@ func _run() -> void:
     store.start_shift("FREE")
     store.shift.tick(1000)
     check(store.shift.requests.size() == 1 and store.shift.requests[0]["patience"] == 65,"Free Play has no timer pressure")
+    var meter: Control = load("res://scripts/pour_meter.gd").new()
+    meter.set("elapsed", 0.0)
+    check(meter.call("quality_bonus") == 20,"Meter center awards a perfect pour")
+    meter.set("elapsed", PI / 4.0)
+    check(meter.call("quality_bonus") == 0,"Meter edge does not award a pour bonus")
+    meter.free()
     # Atomic save round-trip, stale IDs, malformed lines, and legacy schema.
     store.save_path = "user://test_core_fixture.json"
     store.persistence_enabled = true

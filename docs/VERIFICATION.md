@@ -1,4 +1,4 @@
-# Verification evidence — 2026-10-13
+# Verification evidence — 2026-10-14
 
 Engine: Godot 4.7.1 stable, official build a13da4feb. Windows Compatibility renderer, AMD Radeon Graphics.
 
@@ -8,11 +8,11 @@ Import reported `The function signature doesn't match the parent. Parent signatu
 
 ## Offline implementation
 
-`tests/test_core.gd`: **PASS: 61 core checks; 0 failures**.
+`tests/test_core.gd`: **PASS: 67 core checks; 0 failures**. Added checks cover first-run Rush setup, the pour timing window, and its capped XP reward.
 
-`tests/test_ui.gd`: **PASS: native GUI, 49 pointer activations; 0 failures**. Run with a real OpenGL viewport. Godot mouse down/up events activate the controls. Keyboard Enter activates the kitchen tab. Separate native Window dialogs use their semantic signals for confirmation tests; physical dialog clicks, a controller and a real touchscreen have not been tested.
+`tests/test_ui.gd`: **PASS: native GUI, 52 pointer activations; 0 failures**. Run with a real OpenGL viewport. Godot mouse down/up events activate the controls. Keyboard Enter activates the kitchen tab. The flow starts with a selected guest, rejects a partial or incorrect recipe, accepts the exact recipe, displays the timing meter, and awards a tested pour bonus. It also verifies that the next waiting request becomes active when the selected guest times out. Separate native Window dialogs use their semantic signals for confirmation tests; physical dialog clicks, a controller and a real touchscreen have not been tested.
 
-The GUI pass found and repaired wrapping-induced layout expansion, missing customer-card attachment, and competing exclusive dialogs. Final test exit was clean. Actual viewport images: `docs/screenshots/till.png`, `kitchen.png`, `rush-hour.png`.
+The GUI pass found and repaired wrapping-induced layout expansion, missing customer-card attachment, and competing exclusive dialogs. Final test exit was clean. Actual viewport images: `docs/screenshots/till.png`, `kitchen.png` (live pour timing), `kitchen-done.png`, and `rush-hour.png`.
 
 A clean archive of the tracked source, without `assets/licensed/`, imported and started successfully in Godot. The public-source fallback runs without missing paid textures. Licensed artwork is included only in the compiled owner's game and gameplay screenshots.
 
@@ -32,7 +32,9 @@ Reloading the kitchen client and rejoining with its code recovered the same **Do
 
 ## Hosted Web game
 
-The single-thread Compatibility Web export loads at [the public demo](https://cafe-shift-rush-hour.vercel.app/). A real hosted order was submitted, prepared and completed. Refresh preserved the completed local ticket, **41 XP**, and **1 / 5 served**. The original build's missing glyphs were replaced with readable text; pairing dialogs have a contrasting title bar and clear controls.
+The single-thread Compatibility Web export loads at [the public demo](https://cafe-shift-rush-hour.vercel.app/). A new save now opens directly into a live Rush shift with two guests, a 3:00 timer, and the first guest selected. The till shows a live recipe checklist and blocks mismatched tickets. Each kitchen ticket has a moving pour meter; the player's timing can add up to 20 XP, with Rush time as the tradeoff. A guest timeout advances the order panel to the next waiting guest. Free Play no longer shows the five-order Rush goal. Existing saves remain intact. The original build's missing glyphs were replaced with readable text; pairing dialogs have a contrasting title bar and clear controls.
+
+A fresh-origin browser run of the exported Web build also passed the visible loop: an incorrect cart stayed in place and could not be sent; the exact Rs 320 latte-and-croissant order printed as ticket #101; the kitchen moved it into Preparing and showed the moving pour meter; serving it awarded 28 XP and changed the Rush counter to **1 / 5**. One guest left while the local test was running, which produced the expected red patience bar and message. This is local-export browser evidence; the production URL is verified separately below.
 
 `tools/verify_live_export.py`: **PASS: all six hosted runtime files match the local export; WASM MIME is correct.** Actual sizes/hashes are in [live-export-proof.json](live-export-proof.json), separate from the browser gameplay test. The release archive contains compiled runtime files and instructions, with no raw paid asset pack.
 

@@ -69,7 +69,7 @@ func completed(order_id: int) -> int:
             var bonus: int = 0
             if active:
                 streak += 1
-                bonus = mini(20, int(float(requests[i]["patience"]) / 5.0)) + mini(15, streak * 3)
+                bonus = mini(20, maxi(0, int(float(requests[i]["patience"]) / 5.0))) + mini(15, streak * 3)
                 served += 1
                 score += 25 + bonus
             requests.remove_at(i)

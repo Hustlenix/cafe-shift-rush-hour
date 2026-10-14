@@ -10,6 +10,7 @@ const CORAL := Color("a84f41")
 const GREEN := Color("396e61")
 const GOLD := Color("e7ba72")
 const WorldView = preload("res://scripts/cafe_view.gd")
+const BrewMeter = preload("res://scripts/pour_meter.gd")
 
 var active_category: String = "All"
 var search_query: String = ""
@@ -21,8 +22,15 @@ var _menu_grid: GridContainer
 var _cart_list: VBoxContainer
 var _tickets: Dictionary = {}
 var _request_list: VBoxContainer
+var _request_prompt: Label
+var _walk_in: Button
 var _category_buttons: Dictionary = {}
 var _patience: Dictionary = {}
+var _patience_labels: Dictionary = {}
+var _patience_colors: Dictionary = {}
+var _brew_meters: Dictionary = {}
+var _brew_hints: Dictionary = {}
+var _brew_started: Dictionary = {}
 var _name: LineEdit
 var _table: LineEdit
 var _total: Label
@@ -46,6 +54,7 @@ var _audio: AudioStreamPlayer
 var _next_mode: String = "RUSH"
 var _refresh_pending: bool = false
 var _shown_result: String = ""
+var _last_missed: int = 0
 var _sync_dialog: AcceptDialog
 var _sync_endpoint: LineEdit
 var _sync_input: LineEdit
@@ -68,19 +77,47 @@ func _ready() -> void:
     KitchenSync.order_sent.connect(_on_online_sent)
     _audio = AudioStreamPlayer.new()
     add_child(_audio)
+    _last_missed = OrderStore.shift.missed
     _refresh_all()
+    _select_first_waiting_request(false)
     _tab_order.grab_focus()
 
 func _process(_delta: float) -> void:
-    _clock.text = "ONLINE" if KitchenSync.active else ("%02d:%02d" % [int(ceil(OrderStore.shift.remaining)) / 60, int(ceil(OrderStore.shift.remaining)) % 60] if OrderStore.shift.mode == "RUSH" else "NO TIMER")
-    _served.text = "%d online ticket%s" % [KitchenSync.orders.size(),"" if KitchenSync.orders.size() == 1 else "s"] if KitchenSync.active else "%d / 5 served" % OrderStore.shift.served
+    _clock.text = "ONLINE" if KitchenSync.active else ("%02d:%02d" % [int(ceil(OrderStore.shift.remaining)) / 60, int(ceil(OrderStore.shift.remaining)) % 60] if OrderStore.shift.mode == "RUSH" else "FREE PLAY")
+    _served.text = "%d online ticket%s" % [KitchenSync.orders.size(),"" if KitchenSync.orders.size() == 1 else "s"] if KitchenSync.active else ("%d / 5 served" % OrderStore.shift.served if OrderStore.shift.mode == "RUSH" else "%d served today" % OrderStore.shift.served)
     _xp.text = "%d XP  ·  Lv %d" % [OrderStore.xp, 1 + OrderStore.xp / 150]
-    _goal.visible = not KitchenSync.active
+    _goal.visible = not KitchenSync.active and OrderStore.shift.mode == "RUSH"
     _goal.value = mini(5, OrderStore.shift.served)
+    if not KitchenSync.active and OrderStore.shift.missed > _last_missed:
+        var lost: int = OrderStore.shift.missed - _last_missed
+        _last_missed = OrderStore.shift.missed
+        _notify("%d guest%s left without ordering. Watch the red patience bar." % [lost, "" if lost == 1 else "s"])
+        _play("error")
+        if not selected_request.is_empty() and OrderStore.shift.find_request(selected_request).is_empty():
+            selected_request = ""
+            _name.clear()
+            _table.clear()
+            if _world.has_method("set_selected_request"):
+                _world.set_selected_request("")
+            _select_first_waiting_request(false)
+            if selected_request.is_empty():
+                _refresh_cart()
     for id in _patience.keys():
         var request: Dictionary = OrderStore.shift.find_request(id)
         if not request.is_empty() and is_instance_valid(_patience[id]):
-            _patience[id].value = float(request["patience"])
+            var seconds_left: int = maxi(0, ceili(float(request["patience"])))
+            _patience[id].value = float(seconds_left)
+            if is_instance_valid(_patience_labels.get(id)):
+                _patience_labels[id].text = "%ds" % seconds_left
+                var urgency_color: Color = CORAL if seconds_left <= 20 else GREEN
+                _patience_labels[id].add_theme_color_override("font_color", CORAL if seconds_left <= 20 else MUTED)
+                if _patience_colors.get(id, GREEN) != urgency_color:
+                    _patience_colors[id] = urgency_color
+                    _patience[id].add_theme_stylebox_override("fill", _box(urgency_color, urgency_color, 2, 0))
+    for id in _brew_meters.keys():
+        if is_instance_valid(_brew_hints.get(id)):
+            _brew_hints[id].text = _brew_meters[id].quality_hint()
+            _brew_hints[id].add_theme_color_override("font_color", GREEN if _brew_meters[id].quality_bonus() > 0 else MUTED)
     if not KitchenSync.active and not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
         _shown_result = OrderStore.shift.result
         _results.title = "A shift to remember!" if _shown_result == "SUCCESS" else "That's the afternoon rush!"
@@ -279,8 +316,8 @@ func _build_header() -> PanelContainer:
     _goal.add_theme_stylebox_override("fill",_box(GOLD,GOLD,2,0))
     goal.add_child(_goal)
     row.add_child(goal)
-    _clock = _label("NO TIMER",20,GOLD)
-    _clock.custom_minimum_size.x = 115
+    _clock = _label("FREE PLAY",18,GOLD)
+    _clock.custom_minimum_size.x = 125
     row.add_child(_clock)
     _xp = _label("0 XP · Lv 1",16,PAPER)
     _xp.custom_minimum_size.x = 150
@@ -294,7 +331,7 @@ func _build_cafe() -> VBoxContainer:
     var title: HBoxContainer = _row()
     title.add_child(_label("A little café, a lovely afternoon.",20,INK))
     side.add_child(title)
-    side.add_child(_label("Read the request  >  ring it up  >  serve it warm",13,MUTED))
+    side.add_child(_label("Choose a guest  >  match their ticket  >  time the pour",13,MUTED))
     _world = WorldView.new()
     _world.custom_minimum_size = Vector2(430,322)
     side.add_child(_world)
@@ -305,7 +342,7 @@ func _build_cafe() -> VBoxContainer:
     var heading: HBoxContainer = _row()
     heading.add_child(_label("THE REGULARS",13,GREEN))
     heading.add_child(_spacer())
-    heading.add_child(_button("+ Welcome",func(): OrderStore.welcome_customer(),false,"Welcome"))
+    heading.add_child(_button("+ Welcome",_welcome_customer,false,"Welcome"))
     side.add_child(heading)
     var scroll := ScrollContainer.new()
     scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -321,7 +358,7 @@ func _build_order_desk() -> HBoxContainer:
     var menu: VBoxContainer = _column(10)
     menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     row.add_child(menu)
-    menu.add_child(_label("Made with a little love.",23))
+    menu.add_child(_label("Build the order. Nail the pour.",23))
     var search: LineEdit = _input_field("Search the menu…","Search")
     search.max_length = 80
     search.text_changed.connect(func(value: String):
@@ -353,7 +390,13 @@ func _build_order_desk() -> HBoxContainer:
     row.add_child(receipt)
     var cart: VBoxContainer = _column(9)
     receipt.add_child(cart)
-    cart.add_child(_label("Your order",23))
+    var cart_heading: HBoxContainer = _row(4)
+    cart_heading.add_child(_label("Your order",23))
+    cart_heading.add_child(_spacer())
+    _walk_in = _button("Walk-in",_select_walk_in,false,"WalkIn")
+    _walk_in.tooltip_text = "Build a custom order in Free Play. Rush Hour uses guest requests."
+    cart_heading.add_child(_walk_in)
+    cart.add_child(cart_heading)
     _cart_count = _label("0 items · made fresh",12,MUTED)
     cart.add_child(_cart_count)
     cart.add_child(_label("CUSTOMER / TABLE",11,GREEN))
@@ -361,6 +404,10 @@ func _build_order_desk() -> HBoxContainer:
     _table = _input_field("Table or takeaway","Table")
     cart.add_child(_name)
     cart.add_child(_table)
+    _request_prompt = _label("Choose a regular on the left. Match their item list, then send the ticket.",12,MUTED)
+    _request_prompt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _request_prompt.custom_minimum_size.y = 42
+    cart.add_child(_request_prompt)
     var scroll_cart := ScrollContainer.new()
     scroll_cart.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     scroll_cart.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -426,7 +473,13 @@ func _refresh_cart() -> void:
     _clear(_cart_list)
     _cart_count.text = "%d items · made fresh" % OrderStore.cart_item_count()
     _total.text = "TOTAL     Rs %d" % OrderStore.cart_total()
-    _send.disabled = OrderStore.cart.is_empty() or (not KitchenSync.active and OrderStore.shift.mode == "RUSH" and not OrderStore.shift.active) or KitchenSync.busy or (KitchenSync.active and KitchenSync.role != "POS")
+    _walk_in.disabled = not KitchenSync.active and OrderStore.shift.mode == "RUSH"
+    var request: Dictionary = OrderStore.shift.find_request(selected_request)
+    var request_mismatch: bool = not KitchenSync.active and not selected_request.is_empty() and (request.is_empty() or not OrderStore.shift.matches(selected_request, OrderStore.cart))
+    var rush_without_guest: bool = not KitchenSync.active and OrderStore.shift.mode == "RUSH" and selected_request.is_empty()
+    _send.disabled = OrderStore.cart.is_empty() or (not KitchenSync.active and OrderStore.shift.mode == "RUSH" and not OrderStore.shift.active) or KitchenSync.busy or (KitchenSync.active and KitchenSync.role != "POS") or request_mismatch or rush_without_guest
+    _send.text = "Send to kitchen  >" if KitchenSync.active or request.is_empty() else "Send %s's ticket  >" % request["name"]
+    _update_request_prompt()
     if OrderStore.cart.is_empty():
         _cart_list.add_child(_icon("croissant",70))
         _cart_list.add_child(_label("A fresh start.\nAdd something from the menu.",14,MUTED))
@@ -450,6 +503,8 @@ func _refresh_cart() -> void:
 func _refresh_requests() -> void:
     _clear(_request_list)
     _patience.clear()
+    _patience_labels.clear()
+    _patience_colors.clear()
     if KitchenSync.active:
         var note: Label = _label("CONNECTED SERVICE\n\nEnter a guest order at the till. Share the kitchen code with another device. Tickets synchronize automatically every two seconds.\n\nFree Play and Rush Hour are separate offline modes.",14,MUTED)
         note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -460,6 +515,8 @@ func _refresh_requests() -> void:
             selected_request = ""
     else:
         selected_request = ""
+    if selected_request.is_empty() and is_instance_valid(_world) and _world.has_method("set_selected_request"):
+        _world.set_selected_request("")
     for request in OrderStore.shift.requests:
         var id: String = str(request["id"])
         var p: PanelContainer = _panel(Color("e4ecd6") if selected_request == id else PAPER)
@@ -491,12 +548,20 @@ func _refresh_requests() -> void:
             patience.max_value = 65
             patience.value = request["patience"]
             patience.show_percentage = false
-            patience.tooltip_text = "Patience: order before the bar runs out."
+            patience.tooltip_text = "The guest leaves when this reaches zero."
+            patience.size_flags_horizontal = Control.SIZE_EXPAND_FILL
             patience.custom_minimum_size.y = 6
             patience.add_theme_stylebox_override("background",_box(LINE,LINE,2,0))
-            patience.add_theme_stylebox_override("fill",_box(GREEN,GREEN,2,0))
-            info.add_child(patience)
+            var patience_color: Color = CORAL if float(request["patience"]) <= 20 else GREEN
+            patience.add_theme_stylebox_override("fill",_box(patience_color,patience_color,2,0))
+            var urgency: HBoxContainer = _row(5)
+            urgency.add_child(patience)
+            var seconds: Label = _label("%ds" % ceili(float(request["patience"])),11,patience_color)
+            urgency.add_child(seconds)
+            info.add_child(urgency)
             _patience[id] = patience
+            _patience_labels[id] = seconds
+            _patience_colors[id] = patience_color
         r.add_child(info)
         if str(request["state"]) == "WAITING":
             r.add_child(_button("Selected" if selected_request == id else "Take order",func(): _select_request(id),selected_request == id,"Request_"+id))
@@ -509,11 +574,107 @@ func _refresh_requests() -> void:
 func _select_request(id: String) -> void:
     selected_request = id
     var request: Dictionary = OrderStore.shift.find_request(id)
+    if request.is_empty() or str(request["state"]) != "WAITING":
+        selected_request = ""
+        return
     _name.text = str(request["name"])
     _table.text = str(request["table"])
-    _notify("%s's order is selected. Match their request using the menu." % request["name"])
+    if _world.has_method("set_selected_request"):
+        _world.set_selected_request(id)
+    _update_request_prompt()
+    _notify("%s wants %s. Match the list in your order card." % [request["name"], _recipe_summary(request["recipe"])])
     _refresh_requests()
+    _refresh_cart()
     _switch_screen("ORDER")
+
+func _select_first_waiting_request(announce: bool = true) -> void:
+    if KitchenSync.active or not selected_request.is_empty():
+        return
+    for request in OrderStore.shift.requests:
+        if str(request["state"]) == "WAITING":
+            if announce:
+                _select_request(str(request["id"]))
+            else:
+                var id: String = str(request["id"])
+                selected_request = id
+                _name.text = str(request["name"])
+                _table.text = str(request["table"])
+                if _world.has_method("set_selected_request"):
+                    _world.set_selected_request(id)
+                    _refresh_requests()
+                _refresh_cart()
+            return
+
+func _select_walk_in() -> void:
+    if not KitchenSync.active and OrderStore.shift.mode == "RUSH":
+        _notify("Rush Hour is all about serving the waiting regulars. Choose a guest on the left.")
+        return
+    selected_request = ""
+    _name.clear()
+    _table.clear()
+    if _world.has_method("set_selected_request"):
+        _world.set_selected_request("")
+    _refresh_requests()
+    _refresh_cart()
+    _notify("Walk-in selected. Build any order from the menu.")
+
+func _welcome_customer() -> void:
+    var id: String = OrderStore.welcome_customer()
+    if id.is_empty():
+        _notify("The queue is full. Serve a guest before welcoming another.")
+        return
+    var request: Dictionary = OrderStore.shift.find_request(id)
+    if selected_request.is_empty():
+        _select_request(id)
+    else:
+        _notify("%s joined the queue. Choose them when you're ready." % request["name"])
+
+func _recipe_summary(recipe: Dictionary) -> String:
+    var lines: PackedStringArray = []
+    for key in recipe:
+        lines.append("%d x %s" % [int(recipe[key]), OrderStore.find_product(str(key))["name"]])
+    return " + ".join(lines)
+
+func _update_request_prompt() -> void:
+    if not is_instance_valid(_request_prompt):
+        return
+    if KitchenSync.active:
+        _request_prompt.text = "Shared tickets sync to the other device. This till can send custom guest orders."
+        _request_prompt.add_theme_color_override("font_color", GREEN)
+        return
+    if selected_request.is_empty():
+        if OrderStore.shift.mode == "RUSH":
+            _request_prompt.text = "Choose a waiting regular on the left. Rush tickets must match their recipe exactly."
+        else:
+            _request_prompt.text = "Free Play: build any walk-in order, or take a regular's exact request for a service bonus."
+        _request_prompt.add_theme_color_override("font_color", MUTED)
+        return
+    var request: Dictionary = OrderStore.shift.find_request(selected_request)
+    if request.is_empty():
+        _request_prompt.text = "That guest has left. Choose another regular on the left."
+        _request_prompt.add_theme_color_override("font_color", CORAL)
+        return
+    var recipe: Dictionary = request["recipe"]
+    var matched_count: int = 0
+    var target_count: int = 0
+    for key in recipe:
+        var wanted: int = int(recipe[key])
+        target_count += wanted
+        matched_count += mini(wanted, int(OrderStore.cart.get(key, 0)))
+    var extras: bool = false
+    for key in OrderStore.cart:
+        if int(OrderStore.cart[key]) > int(recipe.get(key, 0)):
+            extras = true
+    var progress: String = "%d/%d items packed" % [matched_count, target_count]
+    if OrderStore.shift.matches(selected_request, OrderStore.cart):
+        _request_prompt.text = "REQUEST  ·  %s\n%s\nPERFECT MATCH  ·  ready for the kitchen" % [request["name"], _recipe_summary(recipe)]
+        _request_prompt.add_theme_color_override("font_color", GREEN)
+    elif extras:
+        _request_prompt.text = "REQUEST  ·  %s\n%s\n%s  ·  remove the extra item" % [request["name"], _recipe_summary(recipe), progress]
+        _request_prompt.add_theme_color_override("font_color", CORAL)
+    else:
+        _request_prompt.text = "REQUEST  ·  %s\n%s\n%s  ·  use + Add on the menu" % [request["name"], _recipe_summary(recipe), progress]
+        _request_prompt.add_theme_color_override("font_color", MUTED)
 
 func _place_order() -> void:
     if KitchenSync.active:
@@ -551,6 +712,8 @@ func _build_kitchen() -> HBoxContainer:
     return board
 
 func _refresh_kitchen() -> void:
+    _brew_meters.clear()
+    _brew_hints.clear()
     for status in _tickets:
         _clear(_tickets[status])
     var visible_orders: Array[Dictionary] = KitchenSync.orders if KitchenSync.active else OrderStore.orders
@@ -568,7 +731,21 @@ func _refresh_kitchen() -> void:
         if str(order["status"]) == "DONE":
             c.add_child(_label("SERVED" if KitchenSync.active else "SERVED  +%d XP" % int(order.get("xp",25)),13,GREEN))
         else:
-            var advance: Button = _button("Start preparing" if str(order["status"]) == "NEW" else "Mark done",func(): _advance(id),true,"Advance_%d" % id)
+            var status: String = str(order["status"])
+            if status == "PREPARING" and not KitchenSync.active:
+                var meter: Control = BrewMeter.new()
+                var key: String = str(id)
+                if not _brew_started.has(key):
+                    _brew_started[key] = float(Time.get_ticks_msec()) / 1000.0
+                meter.set("elapsed", maxf(0.0, float(Time.get_ticks_msec()) / 1000.0 - float(_brew_started[key])))
+                meter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+                c.add_child(_label("TIME THE POUR",11,GREEN))
+                c.add_child(meter)
+                var hint: Label = _label(str(meter.call("quality_hint")),11,MUTED)
+                c.add_child(hint)
+                _brew_meters[key] = meter
+                _brew_hints[key] = hint
+            var advance: Button = _button("Start preparing" if status == "NEW" else ("Mark done" if KitchenSync.active else "Serve ticket"),func(): _advance(id),true,"Advance_%d" % id)
             advance.disabled = KitchenSync.active and (KitchenSync.role != "KITCHEN" or KitchenSync.busy)
             c.add_child(advance)
         _tickets[order["status"]].add_child(p)
@@ -586,9 +763,26 @@ func _advance(id: int) -> void:
             if int(order["id"]) == id:
                 KitchenSync.advance(id,str(order["status"]))
                 return
-    if OrderStore.advance_order(id):
-        _play("done")
-        _notify("Ticket #%d updated. %d served · Rs %d earned." % [id,OrderStore.served_count,OrderStore.earnings])
+    var quality: int = 0
+    var key: String = str(id)
+    var current_status: String = ""
+    for order in OrderStore.orders:
+        if int(order.get("id", -1)) == id:
+            current_status = str(order.get("status", ""))
+            break
+    if current_status == "PREPARING" and _brew_meters.has(key):
+        quality = _brew_meters[key].quality_bonus()
+    var xp_before: int = OrderStore.xp
+    if OrderStore.advance_order(id, quality):
+        if current_status == "NEW":
+            _brew_started[key] = float(Time.get_ticks_msec()) / 1000.0
+            _notify("Ticket #%d is on the counter. Watch the gold needle and serve in green for bonus XP." % id)
+        else:
+            _brew_started.erase(key)
+            _play("done")
+            var earned: int = OrderStore.xp - xp_before
+            var quality_text: String = "Perfect pour! " if quality == 20 else ("Good pour! " if quality == 10 else "")
+            _notify("%sTicket #%d served. +%d XP · Rs %d earned." % [quality_text,id,earned,OrderStore.earnings])
 
 func _switch_screen(value: String) -> void:
     _screen = value
@@ -645,10 +839,14 @@ func _start_shift() -> void:
     _shown_result = ""
     selected_request = ""
     OrderStore.start_shift(_next_mode)
+    _last_missed = OrderStore.shift.missed
     _name.clear()
     _table.clear()
+    if _world.has_method("set_selected_request"):
+        _world.set_selected_request("")
     _switch_screen("ORDER")
-    _notify("Serve five regulars before 3:00. Choose a customer to begin." if _next_mode == "RUSH" else "Free Play. Select a regular, or enter a custom guest order.")
+    _notify("Rush is live. Match a request, send the ticket, then time your pour." if _next_mode == "RUSH" else "Free Play. Select a regular, or enter a custom guest order.")
+    _select_first_waiting_request(false)
     _tab_order.grab_focus()
 
 func _build_dialogs() -> void:
@@ -694,6 +892,8 @@ func _build_dialogs() -> void:
     motion.toggled.connect(func(value: bool):
         motion_off = value
         _world.reduced_motion = value
+        for meter in _brew_meters.values():
+            meter.set("reduced_motion", value)
     )
     c.add_child(motion)
     c.add_child(_label("LimeZu · Modern Interiors\nOriginal café layout, icons and chimes.\nAI-assisted code; see README for details.",12,MUTED))

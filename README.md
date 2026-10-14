@@ -10,23 +10,23 @@ A playable **Godot 4** café game for [PIXL project 1646](https://pixl.hackclub.
 
 Open `project.godot` in Godot **4.7.1** and press **F5**. The core uses native Godot Controls and GDScript.
 
-- **The till:** nine items, four categories, search, quantity controls, cart total, guest/table entry, and order placement.
-- **The kitchen:** submitted tickets move **New → Preparing → Done**. Completion awards XP and sales exactly once.
+- **The till:** nine items, four categories, search, quantity controls, cart total, guest/table entry, and order placement. A live recipe checklist shows the selected customer's exact order, what's packed, and when the ticket matches.
+- **The kitchen:** submitted tickets move **New → Preparing → Done**. While preparing, time the moving pour needle in the green window for up to 20 extra XP. Serving right away is allowed; waiting costs time during Rush Hour.
 - **Free Play:** no timer. Serve customer requests or create custom orders.
-- **Rush Hour:** serve **five exact customer requests in three minutes**. Waiting customers have 65 seconds of patience. Early service earns bonus XP. Submitted tickets stay valid when patience runs out.
+- **Rush Hour:** a new save opens with two waiting customers and a live three-minute timer. Serve **five exact customer requests**. Each waiting guest has a visible patience countdown; a missed guest leaves with a sound and message, and the till automatically selects the next waiting guest. Early service earns bonus XP. Submitted tickets stay valid when patience runs out.
 - **Progress:** cart, tickets, lifetime XP and the current shift save locally. Reset requires confirmation. A fresh shift preserves lifetime XP.
 - **Options:** sound effects and reduced motion. Standard buttons support keyboard focus and activation.
 
-Click **Take order**, read the requested items/quantities, add them from the menu, and send the order. Then open the kitchen, start preparing, and mark it done. A mismatched cart gives feedback without removing its contents.
+The first waiting guest is selected for you. The order panel shows their recipe and packing progress. Add the exact items, send the ticket, then open the kitchen and start preparing. In the green pour window, serve for a quality XP bonus; serve early to save Rush time. Mismatched requests stay in the cart so you can correct them. In Free Play, the **Walk-in** control switches to unrestricted custom orders.
 
 ## Verified status
 
-On 2026-10-13 the project was imported and tested with Godot 4.7.1 on Windows:
+The starter was imported and repaired on 2026-10-13; the gameplay revision was tested with Godot 4.7.1 on Windows on 2026-10-14:
 
 - Original parser failure fixed: the starter's `_input()` form helper collided with Godot's built-in input callback.
 - Original order smoke test passes without leaked objects.
-- **61 core checks pass:** totals, quantities, exact recipes, duplicate rewards, five-order victory, timer failure, persistence, invalid save lines, duplicate restored IDs, and future-schema protection.
-- **49 native GUI pointer activations pass**, plus keyboard kitchen-tab activation. These exercise categories, all nine Add buttons, every quantity button, cart clearing, order placement, preparation, completion, customer selection, shift controls, options, and reset confirmation.
+- **67 core checks pass:** totals, quantities, exact recipes, capped pour rewards, first-run Rush setup, duplicate rewards, five-order victory, timer failure, persistence, invalid save lines, duplicate restored IDs, and future-schema protection.
+- **52 native GUI pointer activations pass**, plus keyboard kitchen-tab activation. These exercise categories, all nine Add buttons, every quantity button, cart clearing, recipe matching and blocking, customer selection, preparation, pour timing, completion, shift controls, options, and reset confirmation.
 - **30 backend security checks pass** against a real SQLite fixture: role enforcement, room isolation, menu/quantity validation, authoritative prices, idempotent order submission including a full room, and atomic status transitions.
 - **Two independent Godot processes pass against the deployed HTTPS API and real Postgres database.** The till sends two lattes and one chai (Rs 470); the kitchen receives New, advances Preparing and Done, and the till sees Done automatically. Actual process IDs, timing and room-revocation acknowledgement are in [the client logs](docs/sync-proof.json).
 - **Two Web clients also complete the actual UI flow:** create room, copy/paste code, join kitchen, submit Ada's Rs 470 ticket, prepare, complete and automatically receive Done at the till. [Till proof](docs/screenshots/web-sync-done-pos.jpg) · [kitchen proof](docs/screenshots/web-sync-done-kitchen.jpg).
