@@ -1,5 +1,5 @@
 {
-  "executed_at_utc": "2026-10-13T15:43:28.574960+00:00",
+  "executed_at_utc": "2026-10-14T03:48:09.499905+00:00",
   "url": "https://cafe-shift-rush-hour.vercel.app",
   "files": [
     {
@@ -7,7 +7,7 @@
       "http_status": 200,
       "content_type": "text/html",
       "bytes": 5613,
-      "sha256": "8789f0a9676ec792931413781918b89b5af126023e2ca1e96077450b27f6c5eb",
+      "sha256": "b890027e689c52facb7192f5efa4c5f44832c213bdf20a7cedf7e7b9edb5cc83",
       "matches_local": true
     },
     {
@@ -30,8 +30,8 @@
       "file": "index.pck",
       "http_status": 200,
       "content_type": "application/octet-stream",
-      "bytes": 103716,
-      "sha256": "3941dd0f19df36f2c5c2dd8a21dad1bfda008afa63df6a4403f8432064580c73",
+      "bytes": 113640,
+      "sha256": "5a7b11aa139801327b20f3b7832cab85053949fe356804b25a71134ba7798cfb",
       "matches_local": true
     },
     {
