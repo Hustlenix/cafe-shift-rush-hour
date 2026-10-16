@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, the display foundation scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`), and the café-floor/balance pass is in: served guests leave with fading pixel hearts, and every served order tightens the rush-hour arrival cadence (12s → 8s). The backend/KitchenSync reliability sweep is also complete: a new 37-check end-to-end sync suite drives the real local server through failure and recovery, the two client defects it exposed are fixed, and the two-process live proof was refreshed through the production deployment. The next pass assembles the web export locally and smoke-tests it in a real browser.
+Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, the display foundation scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`), and the café-floor/balance pass is in: served guests leave with fading pixel hearts, and every served order tightens the rush-hour arrival cadence (12s → 8s). The backend/KitchenSync reliability sweep is complete: a new 37-check end-to-end sync suite drives the real local server through failure and recovery, the two client defects it exposed are fixed, and the two-process live proof was refreshed through the production deployment. The web export is assembled locally and smoke-tested in a real browser: the desktop arrangement renders correctly with zero console errors, while phones currently receive the desk scaled down to their width. The next pass works the polish backlog: a portrait/phone reflow, then a sweep for any remaining AI-template feel.
 
 ## Baseline evidence
 
@@ -28,6 +28,8 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - `python tools/test_network.py` against the local server: PASS (two independent Godot processes completed the full POS → kitchen → DONE loop).
 - `python tools/test_network.py --endpoint https://cafe-shift-rush-hour.vercel.app`: PASS on 2026-10-16; refreshed `docs/sync-proof.json`.
 - After the sync client fixes, the whole suite is green again: import, core (71/0), orders, native GUI (52/0), backend (30/0), sync (37/0).
+- Web export: `--export-release "Web"` assembled `builds/web/` from the installed 4.7.1.stable web template (index.wasm 39.5 MB, index.pck 119 KB, all six runtime files present).
+- Browser smoke test: served `builds/web/` over local HTTP and drove it with Playwright 1.63 (Chromium). At 1440×900 and 390×844 the engine boots (`Godot Engine v4.7.1.stable.official.a13da4feb` on the console), the canvas fills the viewport, and there are zero console, page and network errors. The desktop screenshot shows the full shift UI (floor, queue with patience bars, shelf, receipt) correctly laid out; the phone portrait screenshot shows the same desk arrangement scaled to the device width.
 
 ## Findings
 
@@ -46,6 +48,9 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Sweep-discovered fix 1: `advance()` used to poll immediately after a 409, overwriting "Ticket already changed. Refreshing its status." within milliseconds so nobody could read it; the notice now stays visible until the scheduled auto-refresh (≤2s) performs the refresh it promises.
 - Sweep-discovered fix 2: `submit()` from a kitchen session reused the generic busy message; it now clearly says "Only the till can send tickets to the kitchen."
 - Live service re-verified 2026-10-16: the health endpoint reports ready on Neon Postgres, and two independent Godot processes completed POS → kitchen → DONE over HTTPS, then revoked their temporary room.
+- The web export boots straight into offline play: a first-time browser player enters an active Rush shift exactly like the desktop build, with no console errors and no server traffic.
+- Phones currently receive the 1360-wide desk scaled into a ~390px canvas: the arrangement is intact but text becomes unreadably small, so the phone fix is a dedicated arrangement, not more scaling.
+- The hosted Vercel export now trails the local build (today's client fixes are not deployed); redeployment is deferred until explicitly requested.
 
 ## Completed work
 
@@ -61,10 +66,12 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Established the display/responsive foundation: verified canvas stretch at three window sizes with `work/stretch_check.gd`, switched the stretch aspect to `expand` so the layout grows into spare window space (no letterbox bars), and re-verified every suite.
 - Added the café-floor/balance pass: guests who are served now exit with a fading pixel heart above their dialogue bubble, and the rush hour builds — one fixed arrival interval (12s) tightens by 0.8s per served order with an 8s floor, keeping the shift deterministic.
 - Ran the backend/KitchenSync reliability sweep: wrote `tests/test_sync.gd` (37 end-to-end checks including server loss, retry-key reuse and recovery), fixed the two client defects it exposed, validated `tools/test_network.py` against the local server, refreshed the live production proof (`docs/sync-proof.json`), and re-ran every suite green.
+- Assembled the web export locally and smoke-tested it in Chromium at desktop and phone-portrait sizes, capturing both screenshots (`docs/screenshots/web-desktop.jpg`, `web-mobile.jpg`) and verifying zero console, page and network errors.
 
 ## Changed files
 
 - `docs/AUTONOMOUS_REBUILD_PROGRESS.md` (this checkpoint)
+- `docs/screenshots/web-desktop.jpg`, `docs/screenshots/web-mobile.jpg` (browser smoke evidence)
 - `docs/sync-proof.json` (refreshed live two-process proof)
 - `project.godot` (display stretch aspect)
 - `scripts/main.gd`
@@ -81,8 +88,8 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 
 ## Next actionable task
 
-Assemble the web export locally and smoke-test it in a real browser (boots, offline play works, canvas stretches), then continue the polish backlog: remove any remaining AI-template feel and plan the portrait reflow.
+Implement the portrait/phone reflow: give phones a dedicated arrangement (stacked panels, larger touch targets) instead of the scaled-down desk, then sweep for any remaining AI-template feel. The hosted export is behind the local build; redeploy only when explicitly requested.
 
 ## External blockers
 
-- No Godot editor/runtime blocker. Physical touchscreen/controller testing and production deployment remain intentionally out of scope until local changes are verified.
+- No Godot editor/runtime blocker. Physical touchscreen/controller testing remains intentionally out of scope until local changes are verified, and production deployment of the refreshed export waits on explicit user direction.
