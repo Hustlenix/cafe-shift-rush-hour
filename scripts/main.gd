@@ -32,6 +32,7 @@ var _patience_colors: Dictionary = {}
 var _brew_meters: Dictionary = {}
 var _brew_hints: Dictionary = {}
 var _brew_started: Dictionary = {}
+var _flash_pending: Dictionary = {}
 var _name: LineEdit
 var _table: LineEdit
 var _total: Label
@@ -795,6 +796,11 @@ func _refresh_kitchen() -> void:
             advance.disabled = KitchenSync.active and (KitchenSync.role != "KITCHEN" or KitchenSync.busy)
             c.add_child(advance)
         _tickets[order["status"]].add_child(p)
+        if _flash_pending.has(id):
+            p.modulate = _flash_pending[id]
+            _flash_pending.erase(id)
+            var flash: Tween = p.create_tween()
+            flash.tween_property(p,"modulate",Color.WHITE,0.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
     for status in _tickets:
         if _tickets[status].get_child_count() == 0:
             var empty: Label = _label({"NEW":"The printer is quiet.\nOrders appear here as soon as they're sent.","PREPARING":"Room on the counter.\nStart a new ticket to get cooking.","DONE":"Happy tables ahead.\nFinish a ticket to earn XP."}[status],14,MUTED)
@@ -802,6 +808,11 @@ func _refresh_kitchen() -> void:
                 empty.text = "Happy tables ahead.\nCompleted tickets stay here."
             empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
             _tickets[status].add_child(empty)
+    var new_count: int = 0
+    for order in visible_orders:
+        if str(order["status"]) == "NEW":
+            new_count += 1
+    _tab_kitchen.text = "KITCHEN RAIL" if new_count == 0 else "KITCHEN RAIL · %d new" % new_count
 
 func _advance(id: int) -> void:
     if KitchenSync.active:
@@ -822,9 +833,11 @@ func _advance(id: int) -> void:
     if OrderStore.advance_order(id, quality):
         if current_status == "NEW":
             _brew_started[key] = float(Time.get_ticks_msec()) / 1000.0
+            _flash_pending[id] = Color(1.6,1.55,1.4)
             _notify("Ticket #%d is on the counter. Watch the gold needle and serve in green for bonus XP." % id)
         else:
             _brew_started.erase(key)
+            _flash_pending[id] = Color(1.85,1.6,0.95)
             _play("done")
             var earned: int = OrderStore.xp - xp_before
             var quality_text: String = "Perfect pour! " if quality == 20 else ("Good pour! " if quality == 10 else "")

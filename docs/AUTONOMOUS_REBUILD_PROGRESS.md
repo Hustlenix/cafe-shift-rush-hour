@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 0 complete. Phase 1 vertical slice is complete and verified on this branch; the next pass will deepen the café-world interaction and preparation presentation.
+Phase 0 complete. Phase 1 vertical slice is complete and verified, and the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed. The next pass will deepen café-floor life and shift balance.
 
 ## Baseline evidence
 
@@ -20,6 +20,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified on this branch
 - After the first visual slice, the native GUI test still passes: 52 pointer activations / 0 failures.
 - Added a real café-floor pointer path and test coverage for selecting a waiting customer by clicking the drawn actor.
 - Kitchen rail re-run after the presentation edits exposed a layout collapse; after the fix, the full suite is green: import, core (67/0), orders, native GUI (52/0), backend (30/0).
+- After the game-feel pass, import, core (67/0), orders, and the native GUI suite (52/0, including the new kitchen-tab badge assertions) are green again.
 
 ## Findings
 
@@ -41,6 +42,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified on this branch
 - Converted the cart actions into a compact counter receipt action row.
 - Added café-floor mouse/touch customer hit testing, dialogue bubbles, and a native GUI regression check for actor selection.
 - Root-caused and fixed the kitchen-rail desk collapse (kitchen board minimum height + kitchen page height stabilization), then re-verified every suite and refreshed all four screenshots.
+- Added the kitchen game-feel pass: the KITCHEN RAIL tab shows a `· N new` badge while tickets wait in NEW, ticket cards flash briefly on the start and serve transitions, and the pour meter glows gold or green when the needle is inside a bonus zone.
 
 ## Changed files
 
@@ -55,7 +57,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified on this branch
 
 ## Next actionable task
 
-Implement the next interaction slice: make customer selection and queue feedback more readable at narrow widths, then introduce a reusable preparation-station presentation without changing the authoritative order transitions.
+Deepen café-floor life so guests visibly arrive, wait, and leave as their requests move through the rail, and add the seeded difficulty/balance pass for shifts — without changing the authoritative order transitions.
 
 ## External blockers
 

@@ -45,5 +45,10 @@ func _draw() -> void:
     draw_rect(Rect2(size.x * 0.30, y, size.x * 0.40, track_height), SAFE)
     draw_rect(Rect2(size.x * 0.46, y, size.x * 0.08, track_height), PERFECT)
     var needle_x: float = clampf(marker_position() * size.x, 2.0, size.x - 2.0)
+    var bonus: int = quality_bonus()
+    if bonus > 0:
+        var glow: Color = PERFECT if bonus == 20 else SAFE
+        glow.a = 0.45 if bonus == 20 else 0.30
+        draw_rect(Rect2(needle_x - 7.0, y - 3.0, 14.0, track_height + 6.0), glow)
     draw_rect(Rect2(needle_x - 2.0, y - 2.0, 4.0, track_height + 4.0), NEEDLE)
     draw_rect(Rect2(0, y, size.x, track_height), Color(0, 0, 0, 0), false, 1.0)

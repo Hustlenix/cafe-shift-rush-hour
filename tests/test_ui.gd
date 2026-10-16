@@ -118,6 +118,7 @@ func _run() -> void:
     await _capture("till")
     await _click("SendOrder")
     check(store.orders.size() == 1 and store.orders[0]["customer"] == "Amelia","GUI sends the selected customer's exact order")
+    check(app._tab_kitchen.text.contains("1 new"),"Kitchen tab flags the fresh ticket")
     # Keyboard activates the kitchen tab using native Button semantics.
     app._tab_kitchen.grab_focus()
     var key := InputEventKey.new()
@@ -147,6 +148,7 @@ func _run() -> void:
         failures.append("Pour timing meter missing for ticket #%d" % ticket)
     await _click("Advance_%d" % ticket)
     check(store.status_count("DONE") == 1,"Kitchen done button")
+    check(app._tab_kitchen.text == "KITCHEN RAIL","Kitchen tab clears when the rail is empty")
     check(int(store.orders[0].get("quality_bonus",0)) > 0,"Timing the pour earns a kitchen quality bonus")
     await _capture("kitchen-done")
     await _click("TabOrder")
