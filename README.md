@@ -70,7 +70,7 @@ python -m pip install pillow
 python tools/import_assets.py --pack "/path/to/moderninteriors-win"
 ```
 
-The script composes `assets/licensed/cafe.png` and copies the required animation strips locally. **Do not add `assets/licensed/` to Git.** Food icons and sample chimes in `assets/original/` are original code-authored assets, included with the source.
+The script composes `assets/licensed/cafe.png` and copies the required animation strips locally. **Do not add `assets/licensed/` to Git.** Food icons, sample chimes and the app icon in `assets/original/` are original code-authored assets, included with the source; `tools/make_app_icon.py` draws the window icon / web favicon from the in-game palette with no external art.
 
 ## Architecture
 
@@ -91,7 +91,7 @@ The offline game runs without keys or services. Browser local saves depend on st
 
 ## AI assistance and tracking
 
-OpenAI Codex audited and repaired the supplied starter, wrote and revised the game/UI/backend code, authored the original icon/chime generation script, ran the tests, and captured the screenshots. LimeZu authored the purchased art. This README does not claim the human independently wrote or tested AI-authored code.
+OpenAI Codex audited and repaired the supplied starter, wrote and revised the game/UI/backend code, authored the original icon/chime generation scripts, ran the tests, and captured the screenshots. LimeZu authored the purchased art. This README does not claim the human independently wrote or tested AI-authored code.
 
 The existing Hackatime configuration was inspected read-only and still points to Hack Club's endpoint. It was not rewritten. Automated work is not represented as human development hours; no synthetic heartbeats or journal entries were submitted.
 

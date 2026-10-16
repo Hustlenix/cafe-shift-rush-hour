@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, the display foundation scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`), and the café-floor/balance pass is in: served guests leave with fading pixel hearts, and every served order tightens the rush-hour arrival cadence (12s → 8s). The backend/KitchenSync reliability sweep is complete: a new 37-check end-to-end sync suite drives the real local server through failure and recovery, the two client defects it exposed are fixed, and the two-process live proof was refreshed through the production deployment. The web export is assembled locally and smoke-tested in a real browser, and the portrait/phone reflow has landed: narrow windows now get a dedicated stacked arrangement on a 430×900 logical base (window-resize aware) instead of the desk scaled down to their width, and the one overflow the browser verification exposed — a single-line status label forcing a 486px minimum width against the 430px viewport — was root-caused with local probes and fixed. The next pass sweeps for any remaining AI-template feel.
+Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, the display foundation scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`), and the café-floor/balance pass is in: served guests leave with fading pixel hearts, and every served order tightens the rush-hour arrival cadence (12s → 8s). The backend/KitchenSync reliability sweep is complete: a new 37-check end-to-end sync suite drives the real local server through failure and recovery, the two client defects it exposed are fixed, and the two-process live proof was refreshed through the production deployment. The web export is assembled locally and smoke-tested in a real browser, and the portrait/phone reflow has landed: narrow windows now get a dedicated stacked arrangement on a 430×900 logical base (window-resize aware) instead of the desk scaled down to their width, and the one overflow the browser verification exposed — a single-line status label forcing a 486px minimum width against the 430px viewport — was root-caused with local probes and fixed. The AI-template-feel sweep has since run as well: the public surface (copy, links, README claims) came back clean, and the one flagged item — the game had no app icon, so the window icon and web favicon were the default Godot robot — is fixed with a new original code-authored pixel-art icon wired into the project.
 
 ## Baseline evidence
 
@@ -34,6 +34,9 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Reflow verification: core (71/0), orders, native GUI (52/0 including the phone checks), backend (30/0) and sync (37/0) all green; the web export was rebuilt and re-driven in Chromium at 1440×900 and 390×844 with zero console, page and network errors, and the phone screenshot now shows every element fully visible (header XP readout, `+ Welcome`, `Selected`, `Take order`, `Options`, `Sync`).
 - Phone overflow root cause: `work/probe_layout.gd` measured the phone layout's minimum width at 486px — the single-line status label `_status` (454px of text) plus 32px margins — against the 430px viewport, which clipped the right edge exactly as the browser screenshot showed. After enabling word-wrap the margin minimum is 430px and no control exceeds the 430px viewport.
 - Desktop pixel regression check vs HEAD (`work/diff_shots.py`, per-channel tolerance 6): till 0.068%, kitchen 0.032%, kitchen-done 0.200%, rush-hour 0.291% — all inside the 0.4% noise budget and all confined to the café-floor animation region (x463–716, y175–373), with no HUD, menu, receipt or footer differences.
+- AI-template sweep (this checkpoint): cliché/placeholder greps across code, docs and web files found only one internal test label; the public README's claims and links check out (repository public, release `v1.1.0` assets in place, PIXL project page resolves), and the "icon/chime generation script" claim is accurate (`tools/import_assets.py`). The one real template tell was the missing app icon.
+- App icon (this checkpoint): `tools/make_app_icon.py` draws `assets/original/icon.png` (32×32 pixel art at 8x nearest scale = 256×256) from the in-game palette — verified hard pixels (zero partial-alpha pixels, all 32×32 native blocks uniform). Wired via `config/icon`; after re-export the Web favicons are the café cup (`index.icon.png` 256×256, `index.apple-touch-icon.png` 180×180).
+- Icon-change verification: import clean with no errors, core (71/0), web export rebuilt, and a full Chromium re-run at 1440×900 and 390×844 with zero console, page and network errors.
 
 ## Findings
 
@@ -56,6 +59,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Phones used to receive the 1360-wide desk scaled into a ~390px canvas — intact but cramped — so the phone fix became a dedicated arrangement, not more scaling. The reflow now re-bases the logical canvas at 430×900 for narrow windows, and the layout invariant to protect is that phone content must not force more than 430px of minimum width.
 - `_label()` defaults to `AUTOWRAP_OFF` and every long-text label opts into `AUTOWRAP_WORD_SMART` individually; `_status` was the single long line that never did, which is how its 454px minimum silently propagated to the whole phone layout. Any new long label must opt in, or one line of text clips the entire right edge on narrow screens.
 - The hosted Vercel export now trails the local build (today's client fixes are not deployed); redeployment is deferred until explicitly requested.
+- The hosted favicon and window icon were the default Godot robot because the project never set `config/icon`; the fix is code-authored, not sourced: `tools/make_app_icon.py` composes the cup-through-heart icon and `assets/original/icon.png` is committed like the other original assets. A 16px downscale check (`work/icon-preview-16.png`) confirms the cup silhouette survives favicon size.
 
 ## Completed work
 
@@ -74,10 +78,15 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Assembled the web export locally and smoke-tested it in Chromium at desktop and phone-portrait sizes, capturing both screenshots (`docs/screenshots/web-desktop.jpg`, `web-mobile.jpg`) and verifying zero console, page and network errors.
 - Implemented the portrait/phone reflow: a live `_update_layout()` (connected to `size_changed`) that re-bases the canvas at 430×900 and switches the header, stage, order desk and kitchen board to a stacked phone arrangement, with a real-GUI regression block and a `till-phone.png` capture in `tests/test_ui.gd`.
 - Root-caused and fixed the phone right-edge clipping found in browser verification with two throwaway probes (`work/probe_layout.gd`, `work/probe-web.mjs`): the unwrapped `_status` label held the phone layout at 486px minimum width against the 430px viewport; after enabling word-wrap every suite was re-run green, the web export was re-verified in Chromium at both sizes, and the desk screenshots were pixel-diffed against HEAD to confirm they only differ inside the café-floor animation region.
+- Ran the AI-template-feel sweep and fixed the one item it flagged: authored `tools/make_app_icon.py`, generated and wired `assets/original/icon.png` (`config/icon`), re-exported the web build and re-verified it in Chromium.
 
 ## Changed files
 
 - `docs/AUTONOMOUS_REBUILD_PROGRESS.md` (this checkpoint)
+- `assets/original/icon.png`, `assets/original/icon.png.import` (new original app icon)
+- `tools/make_app_icon.py` (new icon generator)
+- `project.godot` (app icon)
+- `README.md` (app icon listed in the original-assets note)
 - `docs/screenshots/web-desktop.jpg`, `docs/screenshots/web-mobile.jpg` (browser smoke evidence)
 - `docs/screenshots/till-phone.png` (new phone-arrangement capture)
 - `docs/sync-proof.json` (refreshed live two-process proof)
@@ -96,7 +105,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 
 ## Next actionable task
 
-Run the AI-template-feel sweep across the built UI (copy, styling, structure) and fix whatever it flags, then re-verify. The portrait/phone reflow is complete. The hosted export is behind the local build; redeploy only when explicitly requested.
+The brief's four phases and the polish backlog (game feel, balance, web export, portrait reflow, AI-template sweep) are complete; nothing further is queued. The remaining items are explicitly gated: deploy the refreshed export only on explicit request, physical touchscreen/controller QA on real hardware, and the human's own PIXL journal notes (never fabricated).
 
 ## External blockers
 
