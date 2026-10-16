@@ -150,8 +150,12 @@ func _apply(response: Dictionary) -> void:
         changed.emit()
 
 func submit(cart: Dictionary, customer: String, table: String) -> void:
-    if not active or role != "POS" or busy:
+    if not active or busy:
         status = "Wait for the connection to finish, then retry."
+        changed.emit()
+        return
+    if role != "POS":
+        status = "Only the till can send tickets to the kitchen."
         changed.emit()
         return
     var lines: Array[Dictionary] = []
@@ -196,6 +200,7 @@ func advance(id: int, expected_status: String) -> void:
     if not response.get("ok",false):
         status = str(response.get("error","Could not update ticket."))
         changed.emit()
+        return
     await poll()
 
 func disconnect_room() -> void:
