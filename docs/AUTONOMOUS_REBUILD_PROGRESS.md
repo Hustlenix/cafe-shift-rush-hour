@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, the display foundation scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`), and the café-floor/balance pass is in: served guests leave with fading pixel hearts, and every served order tightens the rush-hour arrival cadence (12s → 8s). The backend/KitchenSync reliability sweep is complete: a new 37-check end-to-end sync suite drives the real local server through failure and recovery, the two client defects it exposed are fixed, and the two-process live proof was refreshed through the production deployment. The web export is assembled locally and smoke-tested in a real browser: the desktop arrangement renders correctly with zero console errors, while phones currently receive the desk scaled down to their width. The next pass works the polish backlog: a portrait/phone reflow, then a sweep for any remaining AI-template feel.
+Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, the display foundation scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`), and the café-floor/balance pass is in: served guests leave with fading pixel hearts, and every served order tightens the rush-hour arrival cadence (12s → 8s). The backend/KitchenSync reliability sweep is complete: a new 37-check end-to-end sync suite drives the real local server through failure and recovery, the two client defects it exposed are fixed, and the two-process live proof was refreshed through the production deployment. The web export is assembled locally and smoke-tested in a real browser, and the portrait/phone reflow has landed: narrow windows now get a dedicated stacked arrangement on a 430×900 logical base (window-resize aware) instead of the desk scaled down to their width, and the one overflow the browser verification exposed — a single-line status label forcing a 486px minimum width against the 430px viewport — was root-caused with local probes and fixed. The next pass sweeps for any remaining AI-template feel.
 
 ## Baseline evidence
 
@@ -30,6 +30,10 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - After the sync client fixes, the whole suite is green again: import, core (71/0), orders, native GUI (52/0), backend (30/0), sync (37/0).
 - Web export: `--export-release "Web"` assembled `builds/web/` from the installed 4.7.1.stable web template (index.wasm 39.5 MB, index.pck 119 KB, all six runtime files present).
 - Browser smoke test: served `builds/web/` over local HTTP and drove it with Playwright 1.63 (Chromium). At 1440×900 and 390×844 the engine boots (`Godot Engine v4.7.1.stable.official.a13da4feb` on the console), the canvas fills the viewport, and there are zero console, page and network errors. The desktop screenshot shows the full shift UI (floor, queue with patience bars, shelf, receipt) correctly laid out; the phone portrait screenshot shows the same desk arrangement scaled to the device width.
+- Phone reflow (this checkpoint): `_update_layout()` re-bases the logical canvas at 430×900 whenever the window is narrower than 800px — stacked stage/order/kitchen pages, two-column shelf, short `ORDER`/`KITCHEN` tab labels, `Sync` button, phone-sized dialogs — and re-applies live on window resize. A real-GUI phone block in `tests/test_ui.gd` asserts the arrangement and captures `docs/screenshots/till-phone.png`.
+- Reflow verification: core (71/0), orders, native GUI (52/0 including the phone checks), backend (30/0) and sync (37/0) all green; the web export was rebuilt and re-driven in Chromium at 1440×900 and 390×844 with zero console, page and network errors, and the phone screenshot now shows every element fully visible (header XP readout, `+ Welcome`, `Selected`, `Take order`, `Options`, `Sync`).
+- Phone overflow root cause: `work/probe_layout.gd` measured the phone layout's minimum width at 486px — the single-line status label `_status` (454px of text) plus 32px margins — against the 430px viewport, which clipped the right edge exactly as the browser screenshot showed. After enabling word-wrap the margin minimum is 430px and no control exceeds the 430px viewport.
+- Desktop pixel regression check vs HEAD (`work/diff_shots.py`, per-channel tolerance 6): till 0.068%, kitchen 0.032%, kitchen-done 0.200%, rush-hour 0.291% — all inside the 0.4% noise budget and all confined to the café-floor animation region (x463–716, y175–373), with no HUD, menu, receipt or footer differences.
 
 ## Findings
 
@@ -49,7 +53,8 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Sweep-discovered fix 2: `submit()` from a kitchen session reused the generic busy message; it now clearly says "Only the till can send tickets to the kitchen."
 - Live service re-verified 2026-10-16: the health endpoint reports ready on Neon Postgres, and two independent Godot processes completed POS → kitchen → DONE over HTTPS, then revoked their temporary room.
 - The web export boots straight into offline play: a first-time browser player enters an active Rush shift exactly like the desktop build, with no console errors and no server traffic.
-- Phones currently receive the 1360-wide desk scaled into a ~390px canvas: the arrangement is intact but text becomes unreadably small, so the phone fix is a dedicated arrangement, not more scaling.
+- Phones used to receive the 1360-wide desk scaled into a ~390px canvas — intact but cramped — so the phone fix became a dedicated arrangement, not more scaling. The reflow now re-bases the logical canvas at 430×900 for narrow windows, and the layout invariant to protect is that phone content must not force more than 430px of minimum width.
+- `_label()` defaults to `AUTOWRAP_OFF` and every long-text label opts into `AUTOWRAP_WORD_SMART` individually; `_status` was the single long line that never did, which is how its 454px minimum silently propagated to the whole phone layout. Any new long label must opt in, or one line of text clips the entire right edge on narrow screens.
 - The hosted Vercel export now trails the local build (today's client fixes are not deployed); redeployment is deferred until explicitly requested.
 
 ## Completed work
@@ -67,11 +72,14 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 - Added the café-floor/balance pass: guests who are served now exit with a fading pixel heart above their dialogue bubble, and the rush hour builds — one fixed arrival interval (12s) tightens by 0.8s per served order with an 8s floor, keeping the shift deterministic.
 - Ran the backend/KitchenSync reliability sweep: wrote `tests/test_sync.gd` (37 end-to-end checks including server loss, retry-key reuse and recovery), fixed the two client defects it exposed, validated `tools/test_network.py` against the local server, refreshed the live production proof (`docs/sync-proof.json`), and re-ran every suite green.
 - Assembled the web export locally and smoke-tested it in Chromium at desktop and phone-portrait sizes, capturing both screenshots (`docs/screenshots/web-desktop.jpg`, `web-mobile.jpg`) and verifying zero console, page and network errors.
+- Implemented the portrait/phone reflow: a live `_update_layout()` (connected to `size_changed`) that re-bases the canvas at 430×900 and switches the header, stage, order desk and kitchen board to a stacked phone arrangement, with a real-GUI regression block and a `till-phone.png` capture in `tests/test_ui.gd`.
+- Root-caused and fixed the phone right-edge clipping found in browser verification with two throwaway probes (`work/probe_layout.gd`, `work/probe-web.mjs`): the unwrapped `_status` label held the phone layout at 486px minimum width against the 430px viewport; after enabling word-wrap every suite was re-run green, the web export was re-verified in Chromium at both sizes, and the desk screenshots were pixel-diffed against HEAD to confirm they only differ inside the café-floor animation region.
 
 ## Changed files
 
 - `docs/AUTONOMOUS_REBUILD_PROGRESS.md` (this checkpoint)
 - `docs/screenshots/web-desktop.jpg`, `docs/screenshots/web-mobile.jpg` (browser smoke evidence)
+- `docs/screenshots/till-phone.png` (new phone-arrangement capture)
 - `docs/sync-proof.json` (refreshed live two-process proof)
 - `project.godot` (display stretch aspect)
 - `scripts/main.gd`
@@ -84,11 +92,11 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 
 ## Known regressions
 
-- The kitchen-rail desk collapse found during re-verification is fixed and covered by the native GUI suite. No known regressions remain at this checkpoint.
+- The kitchen-rail desk collapse and the phone right-edge overflow were both found during verification, fixed, and re-verified (native GUI suite, phone checks, browser re-run, pixel diff). No known regressions remain at this checkpoint.
 
 ## Next actionable task
 
-Implement the portrait/phone reflow: give phones a dedicated arrangement (stacked panels, larger touch targets) instead of the scaled-down desk, then sweep for any remaining AI-template feel. The hosted export is behind the local build; redeploy only when explicitly requested.
+Run the AI-template-feel sweep across the built UI (copy, styling, structure) and fix whatever it flags, then re-verify. The portrait/phone reflow is complete. The hosted export is behind the local build; redeploy only when explicitly requested.
 
 ## External blockers
 

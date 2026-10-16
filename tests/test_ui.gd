@@ -207,6 +207,24 @@ func _run() -> void:
     app._options.hide()
     await _frames()
     check(store.orders.is_empty() and store.xp == 0,"Reset clears progress only after confirmation")
+    # Portrait reflow: the same build must switch to the hand-sized layout when
+    # the window narrows to a phone-width canvas, and restore on the way back.
+    var wide_size: Vector2i = root.size
+    var wide_min: Vector2i = root.min_size
+    root.min_size = Vector2i(0,0)
+    root.size = Vector2i(430,860)
+    await _frames(6)
+    check(app._phone_mode,"Phone width switches to the hand-sized layout")
+    check(app._stage_row.vertical and app._order_page.vertical and app._kitchen_page.vertical,"Phone layout stacks the stage and desk vertically")
+    check(app._menu_grid.columns == 2,"Phone menu uses two shelf columns")
+    check(app._tab_order.text == "ORDER" and app._tab_kitchen.text == "KITCHEN","Phone tabs use short labels")
+    check(root.content_scale_size == Vector2i(430,900),"Phone layout keeps a hand-sized logical canvas")
+    await _capture("till-phone")
+    root.size = wide_size
+    root.min_size = wide_min
+    await _frames(6)
+    check(not app._phone_mode and root.content_scale_size == Vector2i(0,0),"Wide window restores the desk layout")
+    check(app._tab_order.text == "ORDER STATION","Wide window restores the full tab label")
     app.queue_free()
     await _frames()
     for message in failures:
