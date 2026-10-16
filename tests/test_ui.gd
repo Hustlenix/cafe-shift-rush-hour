@@ -63,6 +63,27 @@ func _run() -> void:
     root.add_child(app)
     await _frames(12)
     check(app.selected_request == "R1" and app._request_prompt.text.contains("Amelia"),"First guest and recipe are visible on the till")
+    # The café floor is an input surface, not only an illustration. Clear the
+    # model's current selection, then select the waiting customer by clicking
+    # their drawn actor.
+    var world: Control = app._world
+    var world_scale: float = minf(world.size.x / 256.0, world.size.y / 192.0)
+    var world_origin: Vector2 = (world.size - Vector2(256, 192) * world_scale) / 2.0
+    app.selected_request = ""
+    var actor_position: Vector2 = world.actors["R1"]["pos"]
+    var world_point: Vector2 = world.global_position + world_origin + actor_position * world_scale + Vector2(10, 12) * world_scale
+    var floor_click := InputEventMouseButton.new()
+    floor_click.position = world_point
+    floor_click.button_index = MOUSE_BUTTON_LEFT
+    floor_click.pressed = true
+    root.push_input(floor_click)
+    floor_click = InputEventMouseButton.new()
+    floor_click.position = world_point
+    floor_click.button_index = MOUSE_BUTTON_LEFT
+    floor_click.pressed = false
+    root.push_input(floor_click)
+    await _frames()
+    check(app.selected_request == "R1" and app._request_prompt.text.contains("Amelia"),"Clicking a waiting customer selects their request")
     for category in ["All","Coffee","Tea","Bites","Desserts"]:
         await _click("Category"+category)
         check(app._menu_grid.get_child_count() == {"All":9,"Coffee":3,"Tea":2,"Bites":2,"Desserts":2}[category],"Category "+category)
@@ -120,7 +141,10 @@ func _run() -> void:
     check(app._status.text.contains("Watch the gold needle"),"Starting a ticket explains its timing action")
     check(app._brew_meters.has(str(ticket)),"Preparing tickets show the pour timing challenge")
     await _capture("kitchen")
-    app._brew_meters[str(ticket)].set("elapsed",PI - 0.04)
+    if app._brew_meters.has(str(ticket)):
+        app._brew_meters[str(ticket)].set("elapsed",PI - 0.04)
+    else:
+        failures.append("Pour timing meter missing for ticket #%d" % ticket)
     await _click("Advance_%d" % ticket)
     check(store.status_count("DONE") == 1,"Kitchen done button")
     check(int(store.orders[0].get("quality_bonus",0)) > 0,"Timing the pour earns a kitchen quality bonus")

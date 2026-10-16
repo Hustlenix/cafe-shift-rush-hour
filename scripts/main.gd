@@ -1,14 +1,15 @@
 extends Control
 ## Native Godot UI; stable form fields survive cart and kitchen updates.
 
-const BG := Color("f6e9d0")
-const PAPER := Color("fff5df")
+const BG := Color("211b22")
+const PAPER := Color("fff3d2")
 const INK := Color("493a39")
-const MUTED := Color("806c62")
-const LINE := Color("dbc5a6")
-const CORAL := Color("a84f41")
-const GREEN := Color("396e61")
+const MUTED := Color("b9a28f")
+const LINE := Color("6c5149")
+const CORAL := Color("c86652")
+const GREEN := Color("6da18b")
 const GOLD := Color("e7ba72")
+const WOOD := Color("3a2b2b")
 const WorldView = preload("res://scripts/cafe_view.gd")
 const BrewMeter = preload("res://scripts/pour_meter.gd")
 
@@ -207,7 +208,7 @@ func _button(text: String, action: Callable, primary: bool = false, node_name: S
     b.add_theme_color_override("font_hover_color", PAPER if primary else INK)
     b.add_theme_color_override("font_pressed_color", PAPER if primary else INK)
     b.add_theme_color_override("font_disabled_color", MUTED)
-    b.add_theme_stylebox_override("normal", _box(CORAL if primary else BG, CORAL if primary else LINE, 6, 9))
+    b.add_theme_stylebox_override("normal", _box(CORAL if primary else Color("f1dfb9"), CORAL if primary else LINE, 6, 9))
     b.add_theme_stylebox_override("hover", _box(Color("bd6653") if primary else Color("ecd5ae"), GOLD, 6, 9))
     b.add_theme_stylebox_override("pressed", _box(Color("8e4237") if primary else Color("dec59b"), GOLD, 6, 9))
     b.add_theme_stylebox_override("disabled", _box(Color("e8dcc7"), LINE, 6, 9))
@@ -257,25 +258,33 @@ func _build_ui() -> void:
     var margin := MarginContainer.new()
     margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     for side in ["left","right","top","bottom"]:
-        margin.add_theme_constant_override("margin_"+side,18)
+        margin.add_theme_constant_override("margin_"+side,14)
     add_child(margin)
-    var page: VBoxContainer = _column(14)
+    var page: VBoxContainer = _column(10)
     margin.add_child(page)
     page.add_child(_build_header())
-    var body: HBoxContainer = _row(16)
+    var body_scroll := ScrollContainer.new()
+    body_scroll.name = "ShiftScroll"
+    body_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    body_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    page.add_child(body_scroll)
+    var body: VBoxContainer = _column(8)
+    body.custom_minimum_size.y = 660
+    body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    page.add_child(body)
+    body_scroll.add_child(body)
     body.add_child(_build_cafe())
-    var desk: VBoxContainer = _column(12)
-    desk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var desk: VBoxContainer = _column(8)
+    desk.size_flags_vertical = Control.SIZE_FILL
     body.add_child(desk)
     var tabs: HBoxContainer = _row(8)
     desk.add_child(tabs)
-    _tab_order = _button("01  THE TILL", func(): _switch_screen("ORDER"), true, "TabOrder")
-    _tab_kitchen = _button("02  THE KITCHEN", func(): _switch_screen("KITCHEN"), false, "TabKitchen")
+    _tab_order = _button("ORDER STATION", func(): _switch_screen("ORDER"), true, "TabOrder")
+    _tab_kitchen = _button("KITCHEN RAIL", func(): _switch_screen("KITCHEN"), false, "TabKitchen")
     tabs.add_child(_tab_order)
     tabs.add_child(_tab_kitchen)
     tabs.add_child(_spacer())
+    tabs.add_child(_button("Options",func(): _options.popup_centered(Vector2i(400,240)),false,"Options"))
     tabs.add_child(_button("Connect devices", _open_sync, false, "OpenSync"))
     _order_page = _build_order_desk()
     _order_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -284,29 +293,40 @@ func _build_ui() -> void:
     _kitchen_page.size_flags_vertical = Control.SIZE_EXPAND_FILL
     desk.add_child(_kitchen_page)
     _kitchen_page.hide()
+    _stabilize_desk_pages()
     var footer: HBoxContainer = _row()
-    footer.add_child(_label("*  CAFÉ SHIFT",12,GREEN))
     _status = _label("Welcome in. Select a customer, read their request, and build their order.",13,MUTED)
     _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     footer.add_child(_status)
-    footer.add_child(_button("Options",func(): _options.popup_centered(Vector2i(400,240)),false,"Options"))
     page.add_child(footer)
     _build_dialogs()
 
+func _stabilize_desk_pages() -> void:
+    # Hidden pages contribute no minimum size, so switching tabs would let the
+    # desk collapse and squeeze the kitchen columns. Reserve at least the order
+    # page's height for the kitchen rail so both tabs share one desk layout.
+    await get_tree().process_frame
+    if not is_instance_valid(_order_page) or not is_instance_valid(_kitchen_page):
+        return
+    _kitchen_page.custom_minimum_size.y = maxf(
+        _kitchen_page.custom_minimum_size.y,
+        _order_page.get_combined_minimum_size().y)
+
 func _build_header() -> PanelContainer:
-    var p: PanelContainer = _panel(Color("493a39"))
-    var row: HBoxContainer = _row(14)
+    var p: PanelContainer = _panel(Color("2b2026"))
+    p.custom_minimum_size.y = 62
+    var row: HBoxContainer = _row(12)
     p.add_child(row)
-    row.add_child(_icon("latte",56))
     var brand: VBoxContainer = _column(0)
-    brand.custom_minimum_size.x = 230
-    brand.add_child(_label("CAFÉ SHIFT",29,PAPER))
-    brand.add_child(_label("R U S H  H O U R",11,GOLD))
+    brand.custom_minimum_size.x = 170
+    brand.add_child(_label("CAFÉ SHIFT",18,PAPER))
+    brand.add_child(_label("RUSH HOUR",10,GOLD))
     row.add_child(brand)
+    row.add_child(_label("THE FLOOR",11,MUTED))
     row.add_child(_spacer())
     var goal: VBoxContainer = _column(3)
-    goal.custom_minimum_size.x = 190
-    _served = _label("0 / 5 served",17,PAPER)
+    goal.custom_minimum_size.x = 160
+    _served = _label("0 / 5 served",14,PAPER)
     goal.add_child(_served)
     _goal = ProgressBar.new()
     _goal.max_value = 5
@@ -316,49 +336,68 @@ func _build_header() -> PanelContainer:
     _goal.add_theme_stylebox_override("fill",_box(GOLD,GOLD,2,0))
     goal.add_child(_goal)
     row.add_child(goal)
-    _clock = _label("FREE PLAY",18,GOLD)
-    _clock.custom_minimum_size.x = 125
+    _clock = _label("FREE PLAY",16,GOLD)
+    _clock.custom_minimum_size.x = 110
     row.add_child(_clock)
-    _xp = _label("0 XP · Lv 1",16,PAPER)
-    _xp.custom_minimum_size.x = 150
+    _xp = _label("0 XP · Lv 1",14,PAPER)
+    _xp.custom_minimum_size.x = 120
     row.add_child(_xp)
     return p
 
-func _build_cafe() -> VBoxContainer:
-    var side: VBoxContainer = _column(10)
-    side.custom_minimum_size.x = 430
-    side.size_flags_horizontal = Control.SIZE_FILL
-    var title: HBoxContainer = _row()
-    title.add_child(_label("A little café, a lovely afternoon.",20,INK))
-    side.add_child(title)
-    side.add_child(_label("Choose a guest  >  match their ticket  >  time the pour",13,MUTED))
+func _build_cafe() -> PanelContainer:
+    var stage: PanelContainer = _panel(WOOD)
+    stage.add_theme_stylebox_override("panel", _box(WOOD, LINE, 8, 8))
+    stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    stage.custom_minimum_size.y = 240
+    stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    var stage_row: HBoxContainer = _row(12)
+    stage_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    stage.add_child(stage_row)
+    var scene_column: VBoxContainer = _column(4)
+    scene_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    scene_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    scene_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    scene_column.add_child(_label("THE CAFÉ FLOOR",11,GOLD))
     _world = WorldView.new()
-    _world.custom_minimum_size = Vector2(430,322)
-    side.add_child(_world)
-    var modes: HBoxContainer = _row(8)
-    modes.add_child(_button("Free Play",func(): _ask_shift("FREE"),false,"FreePlay"))
-    modes.add_child(_button("Rush Hour · 3:00",func(): _ask_shift("RUSH"),true,"RushHour"))
-    side.add_child(modes)
-    var heading: HBoxContainer = _row()
-    heading.add_child(_label("THE REGULARS",13,GREEN))
+    _world.custom_minimum_size = Vector2(560,190)
+    _world.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    if _world.has_signal("customer_selected"):
+        _world.customer_selected.connect(_select_request)
+    scene_column.add_child(_world)
+    stage_row.add_child(scene_column)
+    var queue_panel: PanelContainer = _panel(Color("f6e5c4"))
+    queue_panel.custom_minimum_size.x = 315
+    queue_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    var queue_column: VBoxContainer = _column(6)
+    queue_panel.add_child(queue_column)
+    var heading: HBoxContainer = _row(5)
+    heading.add_child(_label("THE QUEUE",13,INK))
     heading.add_child(_spacer())
     heading.add_child(_button("+ Welcome",_welcome_customer,false,"Welcome"))
-    side.add_child(heading)
+    queue_column.add_child(heading)
+    var queue_hint: Label = _label("Tap a guest to hear their order.",11,MUTED)
+    queue_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    queue_column.add_child(queue_hint)
     var scroll := ScrollContainer.new()
     scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
     scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-    side.add_child(scroll)
+    queue_column.add_child(scroll)
     _request_list = _column(8)
     _request_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     scroll.add_child(_request_list)
-    return side
+    stage_row.add_child(queue_panel)
+    var modes: HBoxContainer = _row(6)
+    modes.add_child(_button("Free Play",func(): _ask_shift("FREE"),false,"FreePlay"))
+    modes.add_child(_button("Rush Hour · 3:00",func(): _ask_shift("RUSH"),true,"RushHour"))
+    scene_column.add_child(modes)
+    return stage
 
 func _build_order_desk() -> HBoxContainer:
     var row: HBoxContainer = _row(12)
     var menu: VBoxContainer = _column(10)
     menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     row.add_child(menu)
-    menu.add_child(_label("Build the order. Nail the pour.",23))
+    menu.add_child(_label("THE SHELF",15,GOLD))
     var search: LineEdit = _input_field("Search the menu…","Search")
     search.max_length = 80
     search.text_changed.connect(func(value: String):
@@ -379,26 +418,28 @@ func _build_order_desk() -> HBoxContainer:
     scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
     menu.add_child(scroll)
     _menu_grid = GridContainer.new()
-    _menu_grid.columns = 2
+    # Three shallow shelf slots keep the full menu visible in the active shift
+    # instead of hiding products behind a dashboard-style scroll wall.
+    _menu_grid.columns = 3
     _menu_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     _menu_grid.add_theme_constant_override("h_separation",8)
     _menu_grid.add_theme_constant_override("v_separation",8)
     scroll.add_child(_menu_grid)
     _refresh_menu()
-    var receipt: PanelContainer = _panel()
+    var receipt: PanelContainer = _panel(Color("fff1d0"))
     receipt.custom_minimum_size.x = 290
     row.add_child(receipt)
-    var cart: VBoxContainer = _column(9)
+    var cart: VBoxContainer = _column(7)
     receipt.add_child(cart)
-    var cart_heading: HBoxContainer = _row(4)
-    cart_heading.add_child(_label("Your order",23))
+    var cart_heading: HBoxContainer = _row(6)
+    cart_heading.add_child(_label("COUNTER RECEIPT",15,INK))
+    _cart_count = _label("0 items",12,MUTED)
+    cart_heading.add_child(_cart_count)
     cart_heading.add_child(_spacer())
     _walk_in = _button("Walk-in",_select_walk_in,false,"WalkIn")
     _walk_in.tooltip_text = "Build a custom order in Free Play. Rush Hour uses guest requests."
     cart_heading.add_child(_walk_in)
     cart.add_child(cart_heading)
-    _cart_count = _label("0 items · made fresh",12,MUTED)
-    cart.add_child(_cart_count)
     cart.add_child(_label("CUSTOMER / TABLE",11,GREEN))
     _name = _input_field("Guest name (optional)","CustomerName")
     _table = _input_field("Table or takeaway","Table")
@@ -418,11 +459,16 @@ func _build_order_desk() -> HBoxContainer:
     cart.add_child(HSeparator.new())
     _total = _label("TOTAL     Rs 0",22)
     cart.add_child(_total)
-    cart.add_child(_label("No real payments. Just good coffee.",11,MUTED))
-    _send = _button("Send to kitchen  >",_place_order,true,"SendOrder")
-    _send.custom_minimum_size.y = 46
-    cart.add_child(_send)
-    cart.add_child(_button("Clear cart",func(): OrderStore.clear_cart(),false,"ClearCart"))
+    var actions: HBoxContainer = _row(6)
+    actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _send = _button("Send ticket  >",_place_order,true,"SendOrder")
+    _send.custom_minimum_size = Vector2(0,44)
+    _send.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    actions.add_child(_send)
+    var clear: Button = _button("Clear",func(): OrderStore.clear_cart(),false,"ClearCart")
+    clear.custom_minimum_size = Vector2(58,44)
+    actions.add_child(clear)
+    cart.add_child(actions)
     return row
 
 func _refresh_menu() -> void:
@@ -432,30 +478,29 @@ func _refresh_menu() -> void:
             continue
         if not search_query.strip_edges().is_empty() and not (str(product["name"])+" "+str(product["description"])).to_lower().contains(search_query.to_lower().strip_edges()):
             continue
-        var card: PanelContainer = _panel()
-        card.custom_minimum_size = Vector2(185,150)
+        var card: PanelContainer = _panel(Color("f1dfb9"))
+        card.custom_minimum_size = Vector2(118,62)
         card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        var column: VBoxContainer = _column(4)
+        var column: VBoxContainer = _column(2)
         card.add_child(column)
         var top: HBoxContainer = _row(5)
-        top.add_child(_icon(str(product["id"]),42))
-        var name: Label = _label(str(product["name"]),15)
+        top.add_child(_icon(str(product["id"]),20))
+        var name: Label = _label(str(product["name"]),11)
         name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         top.add_child(name)
         column.add_child(top)
-        var description: Label = _label(str(product["description"]),12,MUTED)
-        description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-        description.custom_minimum_size.x = 150
-        column.add_child(description)
         var fill := Control.new()
         fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
         column.add_child(fill)
         var bottom: HBoxContainer = _row(5)
-        bottom.add_child(_label("Rs %d" % int(product["price"]),17,CORAL))
+        bottom.add_child(_label("Rs %d" % int(product["price"]),11,CORAL))
         bottom.add_child(_spacer())
         var id: String = str(product["id"])
-        bottom.add_child(_button("+ Add",func(): OrderStore.add_item(id),false,"Add_"+id))
+        var add: Button = _button("ADD",func(): OrderStore.add_item(id),false,"Add_"+id)
+        add.custom_minimum_size = Vector2(48,26)
+        add.add_theme_font_size_override("font_size",11)
+        bottom.add_child(add)
         column.add_child(bottom)
         _menu_grid.add_child(card)
     if _menu_grid.get_child_count() == 0:
@@ -471,7 +516,7 @@ func _refresh_cart() -> void:
     if not is_instance_valid(_cart_list):
         return
     _clear(_cart_list)
-    _cart_count.text = "%d items · made fresh" % OrderStore.cart_item_count()
+    _cart_count.text = "%d items" % OrderStore.cart_item_count()
     _total.text = "TOTAL     Rs %d" % OrderStore.cart_total()
     _walk_in.disabled = not KitchenSync.active and OrderStore.shift.mode == "RUSH"
     var request: Dictionary = OrderStore.shift.find_request(selected_request)
@@ -481,7 +526,7 @@ func _refresh_cart() -> void:
     _send.text = "Send to kitchen  >" if KitchenSync.active or request.is_empty() else "Send %s's ticket  >" % request["name"]
     _update_request_prompt()
     if OrderStore.cart.is_empty():
-        _cart_list.add_child(_icon("croissant",70))
+        _cart_list.add_child(_icon("croissant",48))
         _cart_list.add_child(_label("A fresh start.\nAdd something from the menu.",14,MUTED))
     for id in OrderStore.cart:
         var product: Dictionary = OrderStore.find_product(id)
@@ -694,6 +739,7 @@ func _place_order() -> void:
 
 func _build_kitchen() -> HBoxContainer:
     var board: HBoxContainer = _row(8)
+    board.custom_minimum_size.y = 320 # one ticket card plus its timing meter must fit
     for status in ["NEW","PREPARING","DONE"]:
         var p: PanelContainer = _panel()
         p.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -1,6 +1,8 @@
 extends Control
 ## An animated, live view of the customers in the authoritative shift model.
 
+signal customer_selected(request_id: String)
+
 var room: Texture2D
 var sprites: Dictionary = {}
 var actors: Dictionary = {}
@@ -10,7 +12,7 @@ var selected_request_id: String = ""
 
 func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-    mouse_filter = Control.MOUSE_FILTER_IGNORE
+    mouse_filter = Control.MOUSE_FILTER_PASS
     if ResourceLoader.exists("res://assets/licensed/cafe.png"):
         room = load("res://assets/licensed/cafe.png")
     for name in ["Amelia", "Adam", "Alex", "Bob", "Lucy", "Ash"]:
@@ -27,7 +29,7 @@ func _process(delta: float) -> void:
         ids.append(id)
         var goal: Vector2 = Vector2(112 + index * 33, 133 + index * 7)
         if not actors.has(id):
-            actors[id] = {"id": id, "pos": Vector2(248, 167), "name": str(request["name"]), "state": "WAITING", "patience": 65.0}
+            actors[id] = {"id": id, "pos": Vector2(248, 167), "name": str(request["name"]), "state": "WAITING", "patience": 65.0, "dialogue": _dialogue_for(request)}
         actors[id]["pos"] = goal if reduced_motion else (actors[id]["pos"] as Vector2).move_toward(goal, delta * 30)
         actors[id]["state"] = str(request["state"])
         actors[id]["patience"] = float(request["patience"])
@@ -38,6 +40,51 @@ func _process(delta: float) -> void:
             if float(actors[id]["pos"].x) >= 260:
                 actors.erase(id)
     queue_redraw()
+
+func _gui_input(event: InputEvent) -> void:
+    var pressed: bool = false
+    var point: Vector2 = Vector2.ZERO
+    if event is InputEventMouseButton:
+        var mouse_event: InputEventMouseButton = event
+        pressed = mouse_event.pressed and mouse_event.button_index == MOUSE_BUTTON_LEFT
+        point = mouse_event.position
+    elif event is InputEventScreenTouch:
+        var touch_event: InputEventScreenTouch = event
+        pressed = touch_event.pressed
+        point = touch_event.position
+    if not pressed:
+        return
+    var scale_factor: float = minf(size.x / 256, size.y / 192)
+    var origin: Vector2 = (size - Vector2(256, 192) * scale_factor) / 2
+    for actor in actors.values():
+        if str(actor.get("state", "")) != "WAITING":
+            continue
+        var actor_position: Vector2 = origin + (actor["pos"] as Vector2) * scale_factor
+        var hit_box := Rect2(actor_position - Vector2(5, 8) * scale_factor, Vector2(26, 48) * scale_factor)
+        if hit_box.has_point(point):
+            customer_selected.emit(str(actor["id"]))
+            accept_event()
+            return
+
+func _dialogue_for(request: Dictionary) -> String:
+    var recipe: Dictionary = request.get("recipe", {})
+    var short_names: Dictionary = {
+        "espresso": "espresso", "latte": "latte", "coldbrew": "cold brew",
+        "chai": "chai", "matcha": "matcha", "croissant": "croissant",
+        "toastie": "toastie", "brownie": "brownie", "cookie": "cookie"
+    }
+    var lines: PackedStringArray = []
+    for key in recipe:
+        var label: String = str(short_names.get(str(key), str(key)))
+        var quantity: int = int(recipe[key])
+        if quantity > 1:
+            lines.append(str(quantity) + " " + label + "s")
+        else:
+            lines.append(("an " if "aeiou".contains(label.substr(0, 1)) else "a ") + label)
+    if lines.is_empty():
+        return "Something warm and lovely."
+    var text: String = " and ".join(lines)
+    return text.substr(0, 1).to_upper() + text.substr(1) + ", please."
 
 func _draw() -> void:
     var scale_factor: float = minf(size.x / 256, size.y / 192)
@@ -71,12 +118,20 @@ func _draw_actor(name: String, pos: Vector2, state: String, request_id: String =
         draw_rect(Rect2(pos+Vector2(2,17),Vector2(12,12)),Color("689d8f"))
     if state == "BARISTA":
         return
-    var bubble: Rect2 = Rect2(pos + Vector2(-1,-9),Vector2(19,12))
+    var bubble: Rect2 = Rect2(pos + Vector2(-12,-24),Vector2(66,19))
     var selected: bool = request_id == selected_request_id and not request_id.is_empty()
     var bubble_color: Color = Color("e7ba72") if selected else Color("fff1d2")
     draw_rect(bubble.grow(1), Color("584648"))
     draw_rect(bubble, bubble_color)
     draw_rect(Rect2(pos+Vector2(8,2),Vector2(2,2)),bubble_color)
+    var dialogue: String = str(actor_dialogue(request_id))
+    if not dialogue.is_empty():
+        var shown: String = dialogue
+        if shown.length() > 22:
+            var cut_at: int = shown.substr(0, 22).rfind(" ")
+            shown = shown.substr(0, cut_at if cut_at > 10 else 22) + "..."
+        var font: Font = ThemeDB.fallback_font
+        draw_string(font, pos + Vector2(-9,-12), shown, HORIZONTAL_ALIGNMENT_LEFT, 60, 5, Color("493a39"))
     if state == "KITCHEN":
         draw_rect(Rect2(pos+Vector2(5,-6),Vector2(7,5)),Color("639788"))
         draw_line(pos+Vector2(7,-7),pos+Vector2(7,-9),Color("639788"),1)
@@ -90,6 +145,11 @@ func _draw_actor(name: String, pos: Vector2, state: String, request_id: String =
     else:
         for i in range(3):
             draw_rect(Rect2(pos+Vector2(4+i*4,-4),Vector2(2,2)),Color("b96858"))
+
+func actor_dialogue(request_id: String) -> String:
+    if request_id.is_empty() or not actors.has(request_id):
+        return ""
+    return str(actors[request_id].get("dialogue", ""))
 
 func set_selected_request(id: String) -> void:
     selected_request_id = id
