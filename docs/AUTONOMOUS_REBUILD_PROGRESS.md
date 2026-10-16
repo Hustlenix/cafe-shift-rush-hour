@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Phase 0 complete. Phase 1 vertical slice is complete and verified, and the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed. The next pass will deepen café-floor life and shift balance.
+Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel pass (kitchen tab badge, ticket transition flashes, pour-meter zone glow) has landed, and the display foundation now scales the whole UI to any window size without letterboxing (`canvas_items` + `expand`). The next pass will deepen café-floor life and shift balance.
 
 ## Baseline evidence
 
@@ -21,6 +21,8 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, and the game-
 - Added a real café-floor pointer path and test coverage for selecting a waiting customer by clicking the drawn actor.
 - Kitchen rail re-run after the presentation edits exposed a layout collapse; after the fix, the full suite is green: import, core (67/0), orders, native GUI (52/0), backend (30/0).
 - After the game-feel pass, import, core (67/0), orders, and the native GUI suite (52/0, including the new kitchen-tab badge assertions) are green again.
+- The display check (`work/stretch_check.gd`) shows the logical UI rect never drops below the 1360×860 design size at any tested window size (1360×860 → 1360×860; 1000×700 → 1360×952; 1600×900 → 1528×860), so the canvas scales uniformly and `expand` hands spare window space to the layout instead of black bars.
+- After the display change, import, core (67/0), orders, and the native GUI suite (52/0) are green.
 
 ## Findings
 
@@ -31,6 +33,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, and the game-
 - Existing UI tests assert stable control names and native input behavior; redesign work must preserve those contracts or update tests with equivalent observable behavior.
 - Godot is installed outside PATH at `C:\Users\LalithReddy.b\Godot\Godot_v4.7.1-stable_win64_console.exe`.
 - Hidden pages contribute no minimum size to the desk stack. The kitchen rail board had no minimum height, so switching to the kitchen tab let the desk collapse to about 150px, squeezing the columns to a ~16px visible slice and pushing the Advance button off-window (y=976). Fixed by giving the kitchen board a 320px floor and reserving the order page's height for the kitchen page at startup (`_stabilize_desk_pages`).
+- Earlier notes about the UI clipping below a ~990px window width were stale: `window/stretch/mode="canvas_items"` already keeps the logical UI at 1360×860 and scales it down, so no window size clips content. Adding `window/stretch/aspect="expand"` lets spare window space extend the logical layout (bigger stage/menu) instead of producing black letterbox bars; portrait-phone reflow remains deferred to the export phase.
 
 ## Completed work
 
@@ -43,10 +46,12 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, and the game-
 - Added café-floor mouse/touch customer hit testing, dialogue bubbles, and a native GUI regression check for actor selection.
 - Root-caused and fixed the kitchen-rail desk collapse (kitchen board minimum height + kitchen page height stabilization), then re-verified every suite and refreshed all four screenshots.
 - Added the kitchen game-feel pass: the KITCHEN RAIL tab shows a `· N new` badge while tickets wait in NEW, ticket cards flash briefly on the start and serve transitions, and the pour meter glows gold or green when the needle is inside a bonus zone.
+- Established the display/responsive foundation: verified canvas stretch at three window sizes with `work/stretch_check.gd`, switched the stretch aspect to `expand` so the layout grows into spare window space (no letterbox bars), and re-verified every suite.
 
 ## Changed files
 
 - `docs/AUTONOMOUS_REBUILD_PROGRESS.md` (this checkpoint)
+- `project.godot` (display stretch aspect)
 - `scripts/main.gd`
 - `scripts/cafe_view.gd`
 - `tests/test_ui.gd`
