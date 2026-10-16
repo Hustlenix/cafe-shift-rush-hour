@@ -9,6 +9,7 @@ var actors: Dictionary = {}
 var clock: float = 0.0
 var reduced_motion: bool = false
 var selected_request_id: String = ""
+var celebrations: Dictionary = {}
 
 func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -30,6 +31,7 @@ func _process(delta: float) -> void:
         var goal: Vector2 = Vector2(112 + index * 33, 133 + index * 7)
         if not actors.has(id):
             actors[id] = {"id": id, "pos": Vector2(248, 167), "name": str(request["name"]), "state": "WAITING", "patience": 65.0, "dialogue": _dialogue_for(request)}
+            celebrations.erase(id)
         actors[id]["pos"] = goal if reduced_motion else (actors[id]["pos"] as Vector2).move_toward(goal, delta * 30)
         actors[id]["state"] = str(request["state"])
         actors[id]["patience"] = float(request["patience"])
@@ -39,6 +41,10 @@ func _process(delta: float) -> void:
             actors[id]["pos"] = (actors[id]["pos"] as Vector2).move_toward(Vector2(265, 166), delta * 65)
             if float(actors[id]["pos"].x) >= 260:
                 actors.erase(id)
+    for id in celebrations.keys():
+        celebrations[id] = float(celebrations[id]) - delta
+        if float(celebrations[id]) <= 0.0:
+            celebrations.erase(id)
     queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
@@ -103,6 +109,9 @@ func _draw() -> void:
     _draw_actor("Lucy", Vector2(169, 51), "BARISTA")
     for actor in actors.values():
         _draw_actor(str(actor["name"]), actor["pos"], str(actor["state"]), str(actor.get("id", "")), float(actor.get("patience", 65.0)))
+    for id in celebrations.keys():
+        if actors.has(id):
+            _draw_hearts(actors[id]["pos"] as Vector2, clampf(float(celebrations[id]) / 0.9, 0.0, 1.0))
     for i in range(3):
         var t: float = 0.5 if reduced_motion else fmod(clock * 0.5 + i * 0.33, 1.0)
         draw_line(Vector2(139 + i * 3, 63 - t * 15), Vector2(141 + i * 3, 59 - t * 15), Color(1, 0.94, 0.8, (1-t)*0.65), 1)
@@ -154,6 +163,22 @@ func actor_dialogue(request_id: String) -> String:
 func set_selected_request(id: String) -> void:
     selected_request_id = id
     queue_redraw()
+
+func celebrate(request_id: String) -> void:
+    if actors.has(request_id):
+        celebrations[request_id] = 0.9
+        queue_redraw()
+
+func _draw_hearts(pos: Vector2, fade: float) -> void:
+    ## A small pixel heart over a guest who just got served; it fades as they leave.
+    var color: Color = Color(0.83, 0.39, 0.35, fade)
+    var top: Vector2 = pos + Vector2(4, -34)
+    draw_rect(Rect2(top, Vector2(2, 2)), color)
+    draw_rect(Rect2(top + Vector2(4, 0), Vector2(2, 2)), color)
+    draw_rect(Rect2(top + Vector2(0, 2), Vector2(8, 2)), color)
+    draw_rect(Rect2(top + Vector2(1, 4), Vector2(6, 2)), color)
+    draw_rect(Rect2(top + Vector2(2, 6), Vector2(4, 2)), color)
+    draw_rect(Rect2(top + Vector2(3, 8), Vector2(2, 2)), color)
 
 func draw_ellipse_shadow(pos: Vector2) -> void:
     _draw_shadow(pos)

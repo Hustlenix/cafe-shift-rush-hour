@@ -149,6 +149,7 @@ func _run() -> void:
     await _click("Advance_%d" % ticket)
     check(store.status_count("DONE") == 1,"Kitchen done button")
     check(app._tab_kitchen.text == "KITCHEN RAIL","Kitchen tab clears when the rail is empty")
+    check(app._world.celebrations.has("R1"),"Served guest celebrates while leaving the floor")
     check(int(store.orders[0].get("quality_bonus",0)) > 0,"Timing the pour earns a kitchen quality bonus")
     await _capture("kitchen-done")
     await _click("TabOrder")

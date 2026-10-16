@@ -827,6 +827,12 @@ func _advance(id: int) -> void:
         if int(order.get("id", -1)) == id:
             current_status = str(order.get("status", ""))
             break
+    var served_request: String = ""
+    if current_status == "PREPARING":
+        for request in OrderStore.shift.requests:
+            if int(request.get("order_id", -1)) == id:
+                served_request = str(request["id"])
+                break
     if current_status == "PREPARING" and _brew_meters.has(key):
         quality = _brew_meters[key].quality_bonus()
     var xp_before: int = OrderStore.xp
@@ -839,6 +845,8 @@ func _advance(id: int) -> void:
             _brew_started.erase(key)
             _flash_pending[id] = Color(1.85,1.6,0.95)
             _play("done")
+            if not served_request.is_empty():
+                _world.call("celebrate", served_request)
             var earned: int = OrderStore.xp - xp_before
             var quality_text: String = "Perfect pour! " if quality == 20 else ("Good pour! " if quality == 10 else "")
             _notify("%sTicket #%d served. +%d XP · Rs %d earned." % [quality_text,id,earned,OrderStore.earnings])

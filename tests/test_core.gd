@@ -81,6 +81,18 @@ func _run() -> void:
     check(store.shift.missed == 2,"Waiting customers leave at patience deadline")
     store.shift.tick(180)
     check(store.shift.result == "TIMEOUT" and not store.shift.active,"Timer failure is explicit")
+    # The rush hour builds: every served order tightens the arrival cadence.
+    store.start_shift("RUSH")
+    check(store.shift.arrival_interval() == 12.0,"A fresh rush starts calm")
+    store.shift.requests.clear()
+    store.shift.served = 4
+    store.shift.arrival_clock = 7.0
+    store.shift.tick(1.5)
+    check(store.shift.requests.is_empty(),"A hot streak keeps the floor quiet until the quicker interval")
+    store.shift.tick(0.4)
+    check(store.shift.requests.size() == 1,"The next guest lands on the quicker interval")
+    store.shift.served = 9
+    check(store.shift.arrival_interval() == 8.0,"The rush pace has a floor")
     store.start_shift("FREE")
     store.shift.tick(1000)
     check(store.shift.requests.size() == 1 and store.shift.requests[0]["patience"] == 65,"Free Play has no timer pressure")

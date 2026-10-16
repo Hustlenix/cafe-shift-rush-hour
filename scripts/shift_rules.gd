@@ -81,6 +81,10 @@ func completed(order_id: int) -> int:
             return bonus
     return 0
 
+func arrival_interval() -> float:
+    # The rush builds: each served order tightens the arrival cadence (12s → 8s).
+    return maxf(8.0, 12.0 - 0.8 * float(served))
+
 func tick(delta: float) -> bool:
     if not active or mode != "RUSH":
         return false
@@ -96,7 +100,7 @@ func tick(delta: float) -> bool:
             missed += 1
             streak = 0
             changed = true
-    if arrival_clock >= 12.0:
+    if arrival_clock >= arrival_interval():
         arrival_clock = 0.0
         changed = not welcome().is_empty() or changed
     if remaining <= 0:
