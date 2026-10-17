@@ -77,6 +77,66 @@ func find_product(product_id: String) -> Dictionary:
             return product
     return {}
 
+func find_order(order_id: int) -> Dictionary:
+    for order in orders:
+        if int(order["id"]) == order_id:
+            return order
+    return {}
+
+func save_preparation(order_id: int, state: Dictionary) -> void:
+    var order: Dictionary = find_order(order_id)
+    if order.is_empty() or str(order["status"]) == "DONE":
+        return
+    var progress: Dictionary = order.get("preparations", {})
+    progress[str(state.get("product", ""))] = state.duplicate(true)
+    order["preparations"] = progress
+    if str(order["status"]) == "NEW":
+        order["status"] = "PREPARING"
+    save_data()
+    orders_changed.emit()
+
+func record_crafted_item(order_id: int, product_id: String, quality: int, pours: int = 0) -> bool:
+    var order: Dictionary = find_order(order_id)
+    if order.is_empty() or str(order["status"]) == "DONE":
+        return false
+    var required: int = 0
+    for item in order["items"]:
+        if str(item["id"]) == product_id:
+            required = int(item["qty"])
+    var crafted: Dictionary = order.get("crafted", {})
+    if required == 0 or int(crafted.get(product_id, 0)) >= required:
+        return false
+    crafted[product_id] = int(crafted.get(product_id, 0)) + 1
+    order["crafted"] = crafted
+    order["craft_quality"] = int(order.get("craft_quality", 0)) + clampi(quality, 0, 20)
+    order["perfect_pours"] = int(order.get("perfect_pours", 0)) + clampi(pours, 0, 1)
+    if typeof(order.get("preparations")) == TYPE_DICTIONARY:
+        order["preparations"].erase(product_id)
+    order["status"] = "PREPARING"
+    save_data()
+    orders_changed.emit()
+    return true
+
+func tray_ready(order_id: int) -> bool:
+    var order: Dictionary = find_order(order_id)
+    if order.is_empty() or str(order["status"]) == "DONE":
+        return false
+    var crafted: Dictionary = order.get("crafted", {})
+    for item in order["items"]:
+        if int(crafted.get(str(item["id"]), 0)) != int(item["qty"]):
+            return false
+    return true
+
+func deliver_crafted(order_id: int) -> bool:
+    if not tray_ready(order_id) or (shift.mode == "RUSH" and not shift.active):
+        return false
+    var order: Dictionary = find_order(order_id)
+    var count: int = 0
+    for item in order["items"]:
+        count += int(item["qty"])
+    var quality: int = int(order.get("craft_quality", 0)) / maxi(1, count)
+    return advance_order(order_id, quality)
+
 func add_item(product_id: String) -> void:
     if find_product(product_id).is_empty():
         return
@@ -193,6 +253,7 @@ func advance_order(order_id: int, quality_bonus: int = 0) -> bool:
         if old_status == "NEW":
             orders[i]["status"] = "PREPARING"
         elif old_status == "PREPARING":
+            if bool(orders[i].get("hands_on",false)) and not tray_ready(order_id): return false
             orders[i]["status"] = "DONE"
             served_count += 1
             earnings += int(orders[i]["total"])
@@ -340,6 +401,28 @@ func load_data() -> void:
                 continue
             candidate["items"] = clean_items
             candidate["total"] = total
+            var clean_crafted: Dictionary = {}
+            var raw_crafted: Variant = candidate.get("crafted", {})
+            if typeof(raw_crafted) == TYPE_DICTIONARY:
+                for item in clean_items:
+                    var value: Variant = raw_crafted.get(str(item["id"]), 0)
+                    if typeof(value) in [TYPE_INT, TYPE_FLOAT]:
+                        clean_crafted[str(item["id"])] = clampi(int(value), 0, int(item["qty"]))
+            candidate["crafted"] = clean_crafted
+            var raw_quality: Variant = candidate.get("craft_quality", 0)
+            candidate["craft_quality"] = clampi(int(raw_quality), 0, 2000) if typeof(raw_quality) in [TYPE_INT, TYPE_FLOAT] else 0
+            var raw_pours: Variant = candidate.get("perfect_pours",0)
+            var crafted_count: int = 0
+            for value in clean_crafted.values(): crafted_count += int(value)
+            candidate["perfect_pours"] = clampi(int(raw_pours),0,crafted_count) if typeof(raw_pours) in [TYPE_INT,TYPE_FLOAT] else 0
+            var clean_preps: Dictionary = {}
+            var preps: Variant = candidate.get("preparations", {})
+            if typeof(preps) == TYPE_DICTIONARY:
+                for key in preps:
+                    var prep: Variant = preps[key]
+                    if typeof(prep) == TYPE_DICTIONARY and typeof(prep.get("step")) in [TYPE_INT, TYPE_FLOAT] and typeof(prep.get("quality")) in [TYPE_INT, TYPE_FLOAT] and str(key) in clean_crafted:
+                        clean_preps[str(key)] = {"product": str(key), "step": clampi(int(prep["step"]), 0, 3), "quality": clampi(int(prep["quality"]), 0, 20), "perfect_pours":clampi(int(prep.get("perfect_pours",0)),0,1)}
+            candidate["preparations"] = clean_preps
             orders.append(candidate)
     next_order_id = maxi(101, int(state.get("next_order_id", 101)))
     served_count = maxi(0, int(state.get("served_count", 0)))

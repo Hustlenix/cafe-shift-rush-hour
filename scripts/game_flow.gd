@@ -190,12 +190,13 @@ func _show_guide() -> void:
             prompt.text = "There's her ticket!\n4/5 · Tap Start preparing. The kitchen needs you."
             target = host.find_child("Advance_%d" % tutorial_ticket,true,false)
         5:
-            prompt.text = "5/5 · Time the pour, then Serve ticket.\nGreen earns extra XP. Any timing can finish the order."
+            prompt.text = "5/5 · Make each requested item.\nFollow the equipment, then serve the finished tray."
             target = host.find_child("Advance_%d" % tutorial_ticket,true,false)
     if step >= 3 and host._screen != "KITCHEN":
         prompt.text = "Your ticket is safe.\nOpen Kitchen to continue preparing Amelia's order."
         target = host._tab_kitchen
     if target != null:
+        if is_instance_valid(host.prep_station) and host.prep_station.visible: return
         target.grab_focus()
         var reveal: Control = target.get_parent().get_parent() if step == 1 and target.name.begins_with("Add_") else target
         var parent: Node = target.get_parent()

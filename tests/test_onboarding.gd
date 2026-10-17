@@ -109,9 +109,11 @@ func _run() -> void:
         await click("Advance_%d" % ticket)
         check(app.flow.step == 5 and store.orders[0]["status"] == "PREPARING","Lesson uses real preparation lifecycle")
         await capture("milestone1-kitchen-"+str(resolution.x))
-        if app._brew_meters.has(str(ticket)): app._brew_meters[str(ticket)].elapsed = PI / 4
+        var cook: RefCounted = load("res://tests/prep_input.gd").new()
+        cook.tree = self
+        check(await cook.cook(app.prep_station,resolution.x == 390),"All tutorial items prepared with native gestures")
         var xp_before: int = store.xp
-        await click("Advance_%d" % ticket)
+        await click("DeliverPrepared")
         check(completions.size() == (1 if resolution.x == 390 else 2) and int(completions[-1]["xp"]) > xp_before,"Basic timing completes order and demonstrates XP")
         check(not completions.is_empty() and completions[-1]["duplicate_blocked"],"Completed tutorial order cannot reward twice")
         await create_timer(0.9).timeout
@@ -136,7 +138,10 @@ func _run() -> void:
         var ticket: int = int(store.orders[0]["id"])
         await click("TabKitchen")
         await click("Advance_%d" % ticket)
-        await click("Advance_%d" % ticket)
+        var cook: RefCounted = load("res://tests/prep_input.gd").new()
+        cook.tree = self
+        check(await cook.cook(app.prep_station),"Rush items prepared through the physical workspace")
+        await click("DeliverPrepared")
         check(store.shift.served == i+1,"Rush guest served through actual controls: "+str(i+1))
         if i < 4: await click("TabOrder")
     check(store.shift.result == "SUCCESS" and app._results.visible,"Five actual GUI orders win the Rush challenge")

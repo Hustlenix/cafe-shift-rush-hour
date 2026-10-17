@@ -142,14 +142,13 @@ func _run() -> void:
     var ticket: int = int(store.orders[0]["id"])
     await _click("Advance_%d" % ticket)
     check(store.status_count("PREPARING") == 1,"Kitchen prepare button")
-    check(app._status.text.contains("Watch the gold needle"),"Starting a ticket explains its timing action")
-    check(app._brew_meters.has(str(ticket)),"Preparing tickets show the pour timing challenge")
+    check(app._status.text.contains("Make each requested item"),"Starting a ticket explains preparation")
+    check(app.prep_station.visible,"Preparing tickets open the physical workspace")
     await _capture("kitchen")
-    if app._brew_meters.has(str(ticket)):
-        app._brew_meters[str(ticket)].set("elapsed",PI - 0.04)
-    else:
-        failures.append("Pour timing meter missing for ticket #%d" % ticket)
-    await _click("Advance_%d" % ticket)
+    var cook: RefCounted = load("res://tests/prep_input.gd").new()
+    cook.tree = self
+    check(await cook.cook(app.prep_station),"Mouse gestures prepare every requested item")
+    await _click("DeliverPrepared")
     check(store.status_count("DONE") == 1,"Kitchen done button")
     check(app._tab_kitchen.text == "KITCHEN RAIL","Kitchen tab clears when the rail is empty")
     check(app._world.celebrations.has("R1"),"Served guest celebrates while leaving the floor")

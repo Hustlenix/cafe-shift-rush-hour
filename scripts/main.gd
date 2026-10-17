@@ -11,7 +11,6 @@ const GREEN := Color("6da18b")
 const GOLD := Color("e7ba72")
 const WOOD := Color("3a2b2b")
 const WorldView = preload("res://scripts/cafe_view.gd")
-const BrewMeter = preload("res://scripts/pour_meter.gd")
 const StarIcon = preload("res://scripts/star_icon.gd")
 
 var active_category: String = "All"
@@ -31,9 +30,6 @@ var _category_buttons: Dictionary = {}
 var _patience: Dictionary = {}
 var _patience_labels: Dictionary = {}
 var _patience_colors: Dictionary = {}
-var _brew_meters: Dictionary = {}
-var _brew_hints: Dictionary = {}
-var _brew_started: Dictionary = {}
 var _flash_pending: Dictionary = {}
 var _name: LineEdit
 var _table: LineEdit
@@ -89,6 +85,8 @@ var _kitchen_columns: Array[PanelContainer] = []
 var _sync_box: VBoxContainer
 var _sync_help: Label
 var flow: Node
+var prep_station: Control
+var kitchen_actions: RefCounted
 
 func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -126,6 +124,11 @@ func _ready() -> void:
     flow = preload("res://scripts/game_flow.gd").new()
     flow.host = self
     add_child(flow)
+    prep_station = preload("res://scripts/preparation_station.gd").new()
+    prep_station.host = self
+    add_child(prep_station)
+    kitchen_actions = preload("res://scripts/kitchen_actions.gd").new()
+    kitchen_actions.host = self
 
 func _process(_delta: float) -> void:
     if is_instance_valid(flow) and flow.state == flow.State.WELCOME:
@@ -167,11 +170,8 @@ func _process(_delta: float) -> void:
                 if _patience_colors.get(id, GREEN) != urgency_color:
                     _patience_colors[id] = urgency_color
                     _patience[id].add_theme_stylebox_override("fill", _box(urgency_color, urgency_color, 2, 0))
-    for id in _brew_meters.keys():
-        if is_instance_valid(_brew_hints.get(id)):
-            _brew_hints[id].text = _brew_meters[id].quality_hint()
-            _brew_hints[id].add_theme_color_override("font_color", GREEN if _brew_meters[id].quality_bonus() > 0 else MUTED)
     if not KitchenSync.active and not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
+        if prep_station.visible: prep_station.close_station()
         _shown_result = OrderStore.shift.result
         var served: int = OrderStore.shift.served
         var missed: int = OrderStore.shift.missed
@@ -902,8 +902,6 @@ func _build_kitchen() -> BoxContainer:
     return board
 
 func _refresh_kitchen() -> void:
-    _brew_meters.clear()
-    _brew_hints.clear()
     for status in _tickets:
         _clear(_tickets[status])
     var visible_orders: Array[Dictionary] = KitchenSync.orders if KitchenSync.active else OrderStore.orders
@@ -922,20 +920,14 @@ func _refresh_kitchen() -> void:
             c.add_child(_label("SERVED" if KitchenSync.active else "SERVED  +%d XP" % int(order.get("xp",25)),13,GREEN))
         else:
             var status: String = str(order["status"])
-            if status == "PREPARING" and not KitchenSync.active:
-                var meter: Control = BrewMeter.new()
-                var key: String = str(id)
-                if not _brew_started.has(key):
-                    _brew_started[key] = float(Time.get_ticks_msec()) / 1000.0
-                meter.set("elapsed", maxf(0.0, float(Time.get_ticks_msec()) / 1000.0 - float(_brew_started[key])))
-                meter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-                c.add_child(_label("TIME THE POUR",11,GREEN))
-                c.add_child(meter)
-                var hint: Label = _label(str(meter.call("quality_hint")),11,MUTED)
-                c.add_child(hint)
-                _brew_meters[key] = meter
-                _brew_hints[key] = hint
-            var advance: Button = _button("Start preparing" if status == "NEW" else ("Mark done" if KitchenSync.active else "Serve ticket"),func(): _advance(id),true,"Advance_%d" % id)
+            if status == "PREPARING":
+                var prepared: int = 0
+                var required: int = 0
+                for line in order["items"]:
+                    prepared += int(order.get("crafted",{}).get(str(line["id"]),0))
+                    required += int(line["qty"])
+                c.add_child(_label("%d / %d items ready" % [prepared,required],14,GREEN))
+            var advance: Button = _button("Start preparing" if status == "NEW" else "Prepare / serve tray",func(): _advance(id),true,"Advance_%d" % id)
             advance.disabled = KitchenSync.active and (KitchenSync.role != "KITCHEN" or KitchenSync.busy)
             c.add_child(advance)
         _tickets[order["status"]].add_child(p)
@@ -954,49 +946,10 @@ func _refresh_kitchen() -> void:
     _update_tab_labels()
 
 func _advance(id: int) -> void:
-    if KitchenSync.active:
-        for order in KitchenSync.orders:
-            if int(order["id"]) == id:
-                KitchenSync.advance(id,str(order["status"]))
-                return
-    var quality: int = 0
-    var key: String = str(id)
-    var current_status: String = ""
-    for order in OrderStore.orders:
-        if int(order.get("id", -1)) == id:
-            current_status = str(order.get("status", ""))
-            break
-    var served_request: String = ""
-    if current_status == "PREPARING":
-        for request in OrderStore.shift.requests:
-            if int(request.get("order_id", -1)) == id:
-                served_request = str(request["id"])
-                break
-    if current_status == "PREPARING" and _brew_meters.has(key):
-        quality = _brew_meters[key].quality_bonus()
-    var xp_before: int = OrderStore.xp
-    if OrderStore.advance_order(id, quality):
-        if current_status == "NEW":
-            _brew_started[key] = float(Time.get_ticks_msec()) / 1000.0
-            _flash_pending[id] = Color(1.6,1.55,1.4)
-            _notify("Ticket #%d is on the counter. Watch the gold needle and serve in green for bonus XP." % id)
-        else:
-            _brew_started.erase(key)
-            _flash_pending[id] = Color(1.85,1.6,0.95)
-            _play("done")
-            var earned: int = OrderStore.xp - xp_before
-            if not served_request.is_empty():
-                _world.call("celebrate", served_request)
-                var pop: String = "+%d XP" % earned
-                if quality == 20:
-                    pop = "PERFECT POUR\n" + pop
-                elif quality == 10:
-                    pop = "GOOD POUR\n" + pop
-                if OrderStore.shift.streak >= 3:
-                    pop += "\n×%d streak" % OrderStore.shift.streak
-                _world.call("float_text", served_request, pop, GOLD)
-            var quality_text: String = "Perfect pour! " if quality == 20 else ("Good pour! " if quality == 10 else "")
-            _notify("%sTicket #%d served. +%d XP · Rs %d earned." % [quality_text,id,earned,OrderStore.earnings])
+    kitchen_actions.advance(id)
+
+func complete_prepared(id: int, remote: bool) -> bool:
+    return await kitchen_actions.complete(id,remote)
 
 func _switch_screen(value: String) -> void:
     _screen = value
@@ -1052,6 +1005,7 @@ func _set_stars(count: int) -> void:
         _star_row.get_child(i).call("set_filled", i < count)
 
 func _any_dialog_visible() -> bool:
+    if is_instance_valid(prep_station) and prep_station.visible: return true
     for dialog in [_restart, _reset, _results, _options, _sync_dialog]:
         if dialog.visible:
             return true
@@ -1198,8 +1152,7 @@ func _build_dialogs() -> void:
     motion.toggled.connect(func(value: bool):
         motion_off = value
         _world.reduced_motion = value
-        for meter in _brew_meters.values():
-            meter.set("reduced_motion", value)
+        if is_instance_valid(prep_station): prep_station.bench.reduced_motion = value
     )
     c.add_child(motion)
     var music := CheckButton.new()
