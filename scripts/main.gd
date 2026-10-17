@@ -12,12 +12,14 @@ const GOLD := Color("e7ba72")
 const WOOD := Color("3a2b2b")
 const WorldView = preload("res://scripts/cafe_view.gd")
 const BrewMeter = preload("res://scripts/pour_meter.gd")
+const StarIcon = preload("res://scripts/star_icon.gd")
 
 var active_category: String = "All"
 var search_query: String = ""
 var selected_request: String = ""
 var sound_on: bool = true
 var motion_off: bool = false
+var music_on: bool = true
 var _screen: String = "ORDER"
 var _menu_grid: GridContainer
 var _cart_list: VBoxContainer
@@ -53,6 +55,10 @@ var _reset: ConfirmationDialog
 var _results: ConfirmationDialog
 var _options: AcceptDialog
 var _audio: AudioStreamPlayer
+var _music: AudioStreamPlayer
+var _star_row: HBoxContainer
+var _last_tick_second: int = -1
+var _last_clock_urgent: int = -1
 var _next_mode: String = "RUSH"
 var _refresh_pending: bool = false
 var _shown_result: String = ""
@@ -98,6 +104,20 @@ func _ready() -> void:
     KitchenSync.order_sent.connect(_on_online_sent)
     _audio = AudioStreamPlayer.new()
     add_child(_audio)
+    _music = AudioStreamPlayer.new()
+    _music.volume_db = -16.0
+    add_child(_music)
+    var ambience: AudioStream = load("res://assets/original/ambient.wav")
+    if ambience is AudioStreamWAV:
+        var wave: AudioStreamWAV = ambience
+        wave.loop_mode = AudioStreamWAV.LOOP_FORWARD
+        wave.loop_begin = 0
+        wave.loop_end = wave.data.size() / 2 / (2 if wave.stereo else 1)
+        _music.stream = wave
+    elif ambience != null:
+        _music.stream = ambience
+    if music_on and _music.stream != null:
+        _music.play()
     _last_missed = OrderStore.shift.missed
     _refresh_all()
     _select_first_waiting_request(false)
@@ -109,11 +129,17 @@ func _process(_delta: float) -> void:
     _xp.text = "%d XP  ·  Lv %d" % [OrderStore.xp, 1 + OrderStore.xp / 150]
     _goal.visible = not KitchenSync.active and OrderStore.shift.mode == "RUSH"
     _goal.value = mini(5, OrderStore.shift.served)
+    _update_clock_urgency()
     if not KitchenSync.active and OrderStore.shift.missed > _last_missed:
         var lost: int = OrderStore.shift.missed - _last_missed
         _last_missed = OrderStore.shift.missed
         _notify("%d guest%s left without ordering. Watch the red patience bar." % [lost, "" if lost == 1 else "s"])
         _play("error")
+        var left_id: String = OrderStore.shift.left_out
+        if not left_id.is_empty():
+            if is_instance_valid(_world) and _world.has_method("float_text"):
+                _world.call("float_text", left_id, "walked out", CORAL)
+            OrderStore.shift.left_out = ""
         if not selected_request.is_empty() and OrderStore.shift.find_request(selected_request).is_empty():
             selected_request = ""
             _name.clear()
@@ -141,10 +167,21 @@ func _process(_delta: float) -> void:
             _brew_hints[id].add_theme_color_override("font_color", GREEN if _brew_meters[id].quality_bonus() > 0 else MUTED)
     if not KitchenSync.active and not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
         _shown_result = OrderStore.shift.result
+        var served: int = OrderStore.shift.served
+        var missed: int = OrderStore.shift.missed
+        var stars: int = 3 if served >= 5 and missed == 0 else (2 if served >= 5 else (1 if served >= 3 else 0))
+        var new_best: bool = OrderStore.record_best()
+        _set_stars(stars)
+        var rating: String = ["A quiet shift", "GOOD SHIFT", "GREAT SHIFT", "PERFECT SHIFT"][stars]
+        var banner: String = "NEW BEST · %d shift XP\n" % OrderStore.shift.score if new_best else ""
         _results.title = "A shift to remember!" if _shown_result == "SUCCESS" else "That's the afternoon rush!"
-        _results.dialog_text = "%d / 5 requests served\n%d shift XP · Rs %d earned\n%d customers left before ordering\n\n%s" % [OrderStore.shift.served, OrderStore.shift.score, OrderStore.earnings, OrderStore.shift.missed,
+        _results.dialog_text = "%s%d / 5 requests served\n%d shift XP · Rs %d earned\n%d customers left before ordering\nTips Rs %d · best streak ×%d\n\n%s\n%s" % [banner, served, OrderStore.shift.score, OrderStore.earnings, missed, OrderStore.shift.tips_total, OrderStore.shift.best_streak, rating,
             "Five happy tables. The regulars will be back." if _shown_result == "SUCCESS" else "Try welcoming fewer customers and clear the kitchen early."]
-        _results.popup_centered(Vector2i(400,280) if _phone_mode else Vector2i(470,260))
+        _results.popup_centered(Vector2i(400,420) if _phone_mode else Vector2i(520,380))
+        if _shown_result == "SUCCESS":
+            if not motion_off and is_instance_valid(_world) and _world.has_method("confetti"):
+                _world.call("confetti")
+            _play("fanfare")
 
 func _schedule_refresh() -> void:
     if _refresh_pending:
@@ -304,7 +341,7 @@ func _build_ui() -> void:
     _tabs.add_child(_tab_order)
     _tabs.add_child(_tab_kitchen)
     _tabs.add_child(_spacer())
-    _btn_options = _button("Options",func(): _options.popup_centered(Vector2i(400,240)),false,"Options")
+    _btn_options = _button("Options",func(): _options.popup_centered(Vector2i(400,320)),false,"Options")
     _tabs.add_child(_btn_options)
     _btn_sync = _button("Connect devices", _open_sync, false, "OpenSync")
     _tabs.add_child(_btn_sync)
@@ -926,9 +963,17 @@ func _advance(id: int) -> void:
             _brew_started.erase(key)
             _flash_pending[id] = Color(1.85,1.6,0.95)
             _play("done")
+            var earned: int = OrderStore.xp - xp_before
             if not served_request.is_empty():
                 _world.call("celebrate", served_request)
-            var earned: int = OrderStore.xp - xp_before
+                var pop: String = "+%d XP" % earned
+                if quality == 20:
+                    pop = "PERFECT POUR\n" + pop
+                elif quality == 10:
+                    pop = "GOOD POUR\n" + pop
+                if OrderStore.shift.streak >= 3:
+                    pop += "\n×%d streak" % OrderStore.shift.streak
+                _world.call("float_text", served_request, pop, GOLD)
             var quality_text: String = "Perfect pour! " if quality == 20 else ("Good pour! " if quality == 10 else "")
             _notify("%sTicket #%d served. +%d XP · Rs %d earned." % [quality_text,id,earned,OrderStore.earnings])
 
@@ -951,6 +996,79 @@ func _play(id: String) -> void:
     if sound_on and is_instance_valid(_audio):
         _audio.stream = load("res://assets/original/%s.wav" % id)
         _audio.play()
+    if music_on and is_instance_valid(_music) and _music.stream != null and not _music.playing:
+        _music.play()
+
+func _update_clock_urgency() -> void:
+    ## Rush clock pressure: coral under 30 s, pulse and ticks under 10 s.
+    var rush_live: bool = not KitchenSync.active and OrderStore.shift.mode == "RUSH" and OrderStore.shift.active
+    var urgent: int = 0
+    var seconds: int = 0
+    if rush_live:
+        seconds = maxi(0, int(ceil(OrderStore.shift.remaining)))
+        urgent = 2 if seconds <= 10 else (1 if seconds <= 30 else 0)
+    if urgent != _last_clock_urgent:
+        _last_clock_urgent = urgent
+        _clock.add_theme_color_override("font_color", CORAL if urgent > 0 else GOLD)
+    if urgent == 2 and not motion_off:
+        _clock.modulate.a = 0.62 + 0.38 * absf(sin(float(Time.get_ticks_msec()) / 1000.0 * 5.0))
+    elif _clock.modulate.a != 1.0:
+        _clock.modulate.a = 1.0
+    if urgent == 2 and seconds > 0 and seconds != _last_tick_second:
+        _last_tick_second = seconds
+        _play("tick")
+    if not rush_live:
+        _last_tick_second = -1
+
+func _set_stars(count: int) -> void:
+    if not is_instance_valid(_star_row):
+        return
+    for i in range(_star_row.get_child_count()):
+        _star_row.get_child(i).call("set_filled", i < count)
+
+func _any_dialog_visible() -> bool:
+    for dialog in [_restart, _reset, _results, _options, _sync_dialog]:
+        if dialog.visible:
+            return true
+    return false
+
+func _unhandled_input(event: InputEvent) -> void:
+    ## Shortcuts: 1/2 jump between stations, Esc backs out, Enter sends when nothing else consumes it.
+    if not (event is InputEventKey) or not event.pressed or event.echo:
+        return
+    if _any_dialog_visible():
+        return
+    var key: InputEventKey = event
+    match key.keycode:
+        KEY_ESCAPE:
+            var focused: Control = get_viewport().gui_get_focus_owner()
+            if focused is LineEdit:
+                focused.release_focus()
+            elif not OrderStore.cart.is_empty():
+                OrderStore.clear_cart()
+                _notify("Tray cleared. Build again when ready.")
+            elif not selected_request.is_empty():
+                selected_request = ""
+                _name.clear()
+                _table.clear()
+                if _world.has_method("set_selected_request"):
+                    _world.set_selected_request("")
+                _refresh_requests()
+                _refresh_cart()
+                _notify("Selection cleared.")
+            else:
+                return
+            get_viewport().set_input_as_handled()
+        KEY_1:
+            _switch_screen("ORDER")
+            get_viewport().set_input_as_handled()
+        KEY_2:
+            _switch_screen("KITCHEN")
+            get_viewport().set_input_as_handled()
+        KEY_ENTER, KEY_KP_ENTER:
+            if _screen == "ORDER" and not _send.disabled and get_viewport().gui_get_focus_owner() == null:
+                _send.pressed.emit()
+                get_viewport().set_input_as_handled()
 
 func _ask_shift(mode: String) -> void:
     if KitchenSync.active:
@@ -1006,7 +1124,7 @@ func _build_dialogs() -> void:
     _reset = ConfirmationDialog.new()
     _reset.name = "ResetDialog"
     _reset.title = "Reset all progress?"
-    _reset.dialog_text = "Clear tickets, cart, earnings and lifetime XP on this device?"
+    _reset.dialog_text = "Clear tickets, cart, earnings, records and lifetime XP on this device?"
     _reset.confirmed.connect(func():
         OrderStore.reset_demo()
         selected_request = ""
@@ -1018,6 +1136,15 @@ func _build_dialogs() -> void:
     _results.name = "ResultsDialog"
     _results.get_ok_button().text = "Another rush"
     _results.get_cancel_button().text = "Keep exploring"
+    _star_row = HBoxContainer.new()
+    _star_row.name = "StarRow"
+    _star_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    _star_row.add_theme_constant_override("separation", 8)
+    for _i in range(3):
+        var star: Control = StarIcon.new()
+        star.set("filled", false)
+        _star_row.add_child(star)
+    _results.add_child(_star_row)
     _results.confirmed.connect(func():
         _next_mode = "RUSH"
         _start_shift()
@@ -1044,6 +1171,22 @@ func _build_dialogs() -> void:
             meter.set("reduced_motion", value)
     )
     c.add_child(motion)
+    var music := CheckButton.new()
+    music.text = "Café ambience"
+    music.name = "MusicToggle"
+    music.button_pressed = music_on
+    music.toggled.connect(func(value: bool):
+        music_on = value
+        if is_instance_valid(_music) and _music.stream != null:
+            if value and not _music.playing:
+                _music.play()
+            elif not value:
+                _music.stop()
+    )
+    c.add_child(music)
+    var shortcuts_hint: Label = _label("Shortcuts: 1 order desk · 2 kitchen · Esc clears the tray or selection.",12,MUTED)
+    shortcuts_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    c.add_child(shortcuts_hint)
     c.add_child(_label("LimeZu · Modern Interiors\nOriginal café layout, icons and chimes.\nAI-assisted code; see README for details.",12,MUTED))
     c.add_child(_button("Reset all progress…",func():
         _options.hide()

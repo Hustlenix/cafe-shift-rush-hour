@@ -164,6 +164,27 @@ func _run() -> void:
     await _click("Add_chai")
     await _click("SendOrder")
     check(store.orders.size() == 2 and store.orders[0]["customer"] == "Adam","Exact second customer request placed through UI")
+    # Esc backs out of the tray before anything else.
+    await _click("Add_latte")
+    var escape := InputEventKey.new()
+    escape.keycode = KEY_ESCAPE
+    escape.pressed = true
+    root.push_input(escape)
+    await _frames()
+    check(store.cart.is_empty() and app._status.text.contains("Tray cleared"),"Esc clears a partial tray")
+    # Number keys jump straight between the two stations.
+    var press_two := InputEventKey.new()
+    press_two.keycode = KEY_2
+    press_two.pressed = true
+    root.push_input(press_two)
+    await _frames()
+    check(app._screen == "KITCHEN" and app._kitchen_page.visible,"Number key 2 opens the kitchen rail")
+    var press_one := InputEventKey.new()
+    press_one.keycode = KEY_1
+    press_one.pressed = true
+    root.push_input(press_one)
+    await _frames()
+    check(app._screen == "ORDER" and app._order_page.visible,"Number key 1 returns to the order desk")
     await _click("RushHour")
     check(app._restart.visible,"Rush restart requires confirmation")
     app._restart.get_cancel_button().pressed.emit()
@@ -174,6 +195,12 @@ func _run() -> void:
     app._restart.hide()
     await _frames()
     check(store.shift.mode == "RUSH","Rush confirm starts timer")
+    store.shift.remaining = 9.0
+    app._process(0.0)
+    check(app._clock.get_theme_color("font_color") == app.CORAL,"The rush clock turns coral in the final ten seconds")
+    store.shift.remaining = 174.0
+    app._process(0.0)
+    check(app._clock.get_theme_color("font_color") == app.GOLD,"The rush clock returns to gold with time on the board")
     menu_scroll.scroll_vertical = 0
     # A restart drops guests back to walking; wait for the floor to settle so
     # the capture shows the real rush layout with guests parked at their slots.
@@ -210,6 +237,11 @@ func _run() -> void:
     var motion: CheckButton = app.find_child("MotionToggle",true,false)
     motion.button_pressed = true
     check(not app.sound_on and app.motion_off,"Sound and motion toggles")
+    var music: CheckButton = app.find_child("MusicToggle",true,false)
+    check(music != null,"Music toggle exists in options")
+    if music != null:
+        music.button_pressed = false
+        check(not app.music_on,"Music toggle controls the café ambience")
     # Dialog buttons belong to separate viewports; native signals are used there.
     var reset: Button = app.find_child("ResetProgress",true,false)
     reset.pressed.emit()
@@ -237,6 +269,33 @@ func _run() -> void:
     await _frames(6)
     check(not app._phone_mode and root.content_scale_size == Vector2i(0,0),"Wide window restores the desk layout")
     check(app._tab_order.text == "ORDER STATION","Wide window restores the full tab label")
+    # The shift report celebrates the run: stars, records and tip visibility.
+    store.shift.mode = "RUSH"
+    store.shift.active = false
+    store.shift.result = "SUCCESS"
+    store.shift.served = 5
+    store.shift.missed = 0
+    store.shift.score = 210
+    store.shift.tips_total = 30
+    store.shift.best_streak = 5
+    app._shown_result = ""
+    root.gui_embed_subwindows = true
+    app._process(0.0)
+    await _frames(4)
+    check(app._results.visible,"Shift report opens for a finished shift")
+    check(app._results.dialog_text.contains("NEW BEST"),"A record run is flagged as NEW BEST")
+    check(app._results.dialog_text.contains("PERFECT SHIFT"),"A perfect shift earns the top rating")
+    check(app._results.dialog_text.contains("Tips Rs 30"),"Tips are visible in the report")
+    var filled_stars: int = 0
+    for star in app._star_row.get_children():
+        if bool(star.get("filled")):
+            filled_stars += 1
+    check(filled_stars == 3,"Five served with no walkouts fills all three stars")
+    check(int(store.best.get("score",0)) == 210 and int(store.best.get("streak",0)) == 5,"The record run is stored as a new best")
+    await _capture("shift-report")
+    app._results.hide()
+    root.gui_embed_subwindows = false
+    store.shift.result = ""
     app.queue_free()
     await _frames()
     for message in failures:

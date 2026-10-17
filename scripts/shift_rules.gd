@@ -17,6 +17,9 @@ var missed: int = 0
 var streak: int = 0
 var score: int = 0
 var result: String = ""
+var tips_total: int = 0
+var best_streak: int = 0
+var left_out: String = ""  # transient: id of the guest who just ran out of patience
 var requests: Array[Dictionary] = []
 
 func start(value: String) -> void:
@@ -31,6 +34,9 @@ func start(value: String) -> void:
     streak = 0
     score = 0
     result = ""
+    tips_total = 0
+    best_streak = 0
+    left_out = ""
     requests.clear()
     welcome()
     if mode == "RUSH":
@@ -68,8 +74,11 @@ func completed(order_id: int) -> int:
         if int(requests[i]["order_id"]) == order_id:
             var bonus: int = 0
             if active:
+                var tip: int = mini(20, maxi(0, int(float(requests[i]["patience"]) / 5.0)))
                 streak += 1
-                bonus = mini(20, maxi(0, int(float(requests[i]["patience"]) / 5.0))) + mini(15, streak * 3)
+                bonus = tip + mini(15, streak * 3)
+                tips_total += tip
+                best_streak = maxi(best_streak, streak)
                 served += 1
                 score += 25 + bonus
             requests.remove_at(i)
@@ -96,6 +105,7 @@ func tick(delta: float) -> bool:
         requests[i]["patience"] = maxf(0.0, float(requests[i]["patience"]) - delta)
         # Submitted kitchen tickets remain valid; late service loses the tip.
         if float(requests[i]["patience"]) <= 0 and str(requests[i]["state"]) == "WAITING":
+            left_out = str(requests[i]["id"])
             requests.remove_at(i)
             missed += 1
             streak = 0
@@ -112,7 +122,8 @@ func tick(delta: float) -> bool:
 func snapshot() -> Dictionary:
     return {"mode": mode, "active": active, "remaining": remaining, "elapsed": elapsed,
         "arrival_clock": arrival_clock, "sequence": sequence, "served": served,
-        "missed": missed, "streak": streak, "score": score, "result": result, "requests": requests}
+        "missed": missed, "streak": streak, "score": score, "result": result,
+        "tips_total": tips_total, "best_streak": best_streak, "requests": requests}
 
 func restore(data: Dictionary) -> void:
     if data.is_empty():
@@ -129,6 +140,9 @@ func restore(data: Dictionary) -> void:
     streak = maxi(0, int(data.get("streak", 0)))
     score = maxi(0, int(data.get("score", 0)))
     result = str(data.get("result", ""))
+    tips_total = maxi(0, int(data.get("tips_total", 0)))
+    best_streak = maxi(0, int(data.get("best_streak", 0)))
+    left_out = ""
     requests.clear()
     if typeof(data.get("requests")) != TYPE_ARRAY:
         return

@@ -25,6 +25,7 @@ var next_order_id: int = 101
 var served_count: int = 0
 var earnings: int = 0
 var xp: int = 0
+var best: Dictionary = {"score": 0, "served": 0, "streak": 0}
 var save_path: String = SAVE_PATH
 var persistence_enabled: bool = true
 var last_error: String = ""
@@ -210,6 +211,23 @@ func status_count(status: String) -> int:
             count += 1
     return count
 
+func record_best() -> bool:
+    ## Called once when a shift report is shown. Returns true if the score is a new record.
+    var new_score_best: bool = shift.result == "SUCCESS" and shift.score > int(best.get("score", 0))
+    var changed: bool = false
+    if new_score_best:
+        best["score"] = shift.score
+        changed = true
+    if shift.served > int(best.get("served", 0)):
+        best["served"] = shift.served
+        changed = true
+    if shift.best_streak > int(best.get("streak", 0)):
+        best["streak"] = shift.best_streak
+        changed = true
+    if changed:
+        save_data()
+    return new_score_best
+
 func reset_demo() -> void:
     cart.clear()
     orders.clear()
@@ -217,6 +235,7 @@ func reset_demo() -> void:
     served_count = 0
     earnings = 0
     xp = 0
+    best = {"score": 0, "served": 0, "streak": 0}
     shift.start("FREE")
     save_data()
     cart_changed.emit()
@@ -238,6 +257,7 @@ func save_data() -> void:
         "served_count": served_count,
         "earnings": earnings,
         "xp": xp,
+        "best": best,
         "shift": shift.snapshot()
     }, "  "))
     file.close()
@@ -295,6 +315,13 @@ func load_data() -> void:
     served_count = maxi(0, int(state.get("served_count", 0)))
     earnings = maxi(0, int(state.get("earnings", 0)))
     xp = maxi(0, int(state.get("xp", served_count * 25)))
+    best = {"score": 0, "served": 0, "streak": 0}
+    if typeof(state.get("best")) == TYPE_DICTIONARY:
+        var best_state: Dictionary = state["best"]
+        for key in best.keys():
+            var value: Variant = best_state.get(key)
+            if typeof(value) in [TYPE_INT, TYPE_FLOAT]:
+                best[key] = maxi(0, int(value))
     for order in orders:
         next_order_id = maxi(next_order_id, int(order["id"]) + 1)
     if typeof(state.get("shift")) == TYPE_DICTIONARY:
