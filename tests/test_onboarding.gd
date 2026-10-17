@@ -111,6 +111,7 @@ func _run() -> void:
         await capture("milestone1-kitchen-"+str(resolution.x))
         var cook: RefCounted = load("res://tests/prep_input.gd").new()
         cook.tree = self
+        cook.capture_prefix = "cafe-"+str(resolution.x)
         check(await cook.cook(app.prep_station,resolution.x == 390),"All tutorial items prepared with native gestures")
         var xp_before: int = store.xp
         await click("DeliverPrepared")
@@ -140,12 +141,14 @@ func _run() -> void:
         await click("Advance_%d" % ticket)
         var cook: RefCounted = load("res://tests/prep_input.gd").new()
         cook.tree = self
+        cook.realtime = true
         check(await cook.cook(app.prep_station),"Rush items prepared through the physical workspace")
         await click("DeliverPrepared")
         check(store.shift.served == i+1,"Rush guest served through actual controls: "+str(i+1))
         if i < 4: await click("TabOrder")
     check(store.shift.result == "SUCCESS" and app._results.visible,"Five actual GUI orders win the Rush challenge")
     await capture("milestone1-five-order-victory")
+    await capture("cafe-five-order-victory")
     app._results.hide()
     await frames()
     app.flow.show_welcome()

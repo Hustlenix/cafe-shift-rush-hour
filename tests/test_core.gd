@@ -178,7 +178,7 @@ func _run() -> void:
         check(not legacy.tutorial_completed,"Version %d defaults new tutorial flag safely" % schema)
         legacy.save_data()
         var upgraded: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(store.save_path))
-        check(int(upgraded["version"]) == 3 and int(upgraded["xp"]) == 123,"Version %d migrates safely to version 3" % schema)
+        check(int(upgraded["version"]) == 4 and int(upgraded["xp"]) == 123,"Version %d migrates safely to version 4" % schema)
         legacy.free()
     file = FileAccess.open(store.save_path,FileAccess.WRITE)
     file.store_string('{"version":999}')

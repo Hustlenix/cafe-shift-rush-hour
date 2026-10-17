@@ -53,12 +53,14 @@ func _process(delta: float) -> void:
         _update_facing(actors[id], after - before)
         actors[id]["state"] = str(request["state"])
         actors[id]["patience"] = float(request["patience"])
+        actors[id]["max_patience"] = float(request.get("max_patience",65))
+        actors[id]["personality"] = str(request.get("personality","Regular"))
         index += 1
     for id in actors.keys():
         if id not in ids:
             actors[id]["state"] = "LEAVING"
             var before: Vector2 = actors[id]["pos"]
-            var after: Vector2 = before.move_toward(EXIT_POINT, delta * 65)
+            var after: Vector2 = EXIT_POINT if reduced_motion else before.move_toward(EXIT_POINT, delta * 65)
             actors[id]["pos"] = after
             _update_facing(actors[id], after - before)
             if after.x >= EXIT_ERASE_X:
@@ -235,6 +237,13 @@ func _draw_screen_overlays(scale_factor: float, origin: Vector2) -> void:
         var baseline: Vector2 = Vector2(sprite.x + 8.0 * scale_factor - label_width * 0.5, sprite.y + 32.0 * scale_factor + name_size + 2.0)
         draw_string(font, baseline + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size, Color(0.16, 0.11, 0.12, 0.8))
         draw_string(font, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size, Color("fff3d2"))
+        if str(actor.get("state","")) != "LEAVING":
+            var badge: String = {"Impatient":"!","Generous":"+","Big Order":"2x","VIP":"★"}.get(str(actor.get("personality","Regular")),"")
+            if badge != "": draw_string(font,baseline+Vector2(label_width+3,0),badge,HORIZONTAL_ALIGNMENT_LEFT,-1,name_size,Color("e7ba72"))
+            var ratio: float = clampf(float(actor["patience"])/maxf(1,float(actor.get("max_patience",65))),0,1)
+            var at: Vector2 = baseline+Vector2(label_width*0.5-18,6)
+            draw_rect(Rect2(at,Vector2(36,4)),Color("493a39"))
+            draw_rect(Rect2(at,Vector2(36*ratio,4)),Color("c86652") if ratio < 0.25 else Color("6da18b"))
     if actors.is_empty():
         var hint: String = "The floor is quiet · welcome a guest"
         var hint_size: int = int(clampf(round(scale_factor * 2.2), 11.0, 14.0))
@@ -316,6 +325,10 @@ func celebrate(request_id: String) -> void:
 
 func float_text(request_id: String, text: String, color: Color) -> void:
     ## A short-lived popup above a guest ("+45 XP", "walked out").
+    for popup in floats:
+        if str(popup["id"]) == request_id and float(popup["t"]) < 0.05:
+            popup["text"] = str(popup["text"]) + "\n" + text
+            return
     floats.append({"id": request_id, "text": text, "color": color, "t": 0.0})
     while floats.size() > 5:
         floats.pop_front()

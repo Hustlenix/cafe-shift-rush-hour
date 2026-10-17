@@ -34,6 +34,15 @@ var _save_clock: float = 0.0
 var gameplay_running: bool = false
 var tutorial_completed: bool = false
 var _tutorial_backup: Dictionary = {}
+const ACHIEVEMENTS: Dictionary = {
+    "first_service":"First happy guest · finish an order",
+    "silky_hands":"Silky hands · 3 perfect pours in a shift",
+    "five_happy_tables":"Five happy tables · win Rush Hour",
+    "perfect_shift":"Perfect shift · 5 excellent services",
+    "vip_host":"VIP host · excellent VIP service"
+}
+var achievements: Array[String] = []
+var last_unlocks: Array[String] = []
 
 func _ready() -> void:
     load_data()
@@ -55,6 +64,7 @@ func _process(delta: float) -> void:
 
 func start_shift(mode: String, seed_value: int = -1) -> void:
     gameplay_running = true
+    last_unlocks.clear()
     cart.clear()
     orders.clear()
     served_count = 0
@@ -109,7 +119,9 @@ func record_crafted_item(order_id: int, product_id: String, quality: int, pours:
     crafted[product_id] = int(crafted.get(product_id, 0)) + 1
     order["crafted"] = crafted
     order["craft_quality"] = int(order.get("craft_quality", 0)) + clampi(quality, 0, 20)
-    order["perfect_pours"] = int(order.get("perfect_pours", 0)) + clampi(pours, 0, 1)
+    var can_pour: bool = false
+    for action in preload("res://scripts/recipes.gd").steps(product_id): can_pour = can_pour or str(action[0]) == "hold"
+    order["perfect_pours"] = int(order.get("perfect_pours", 0)) + (clampi(pours,0,1) if can_pour else 0)
     if typeof(order.get("preparations")) == TYPE_DICTIONARY:
         order["preparations"].erase(product_id)
     order["status"] = "PREPARING"
@@ -261,6 +273,13 @@ func advance_order(order_id: int, quality_bonus: int = 0) -> bool:
             xp += reward
             orders[i]["xp"] = reward
             orders[i]["quality_bonus"] = clampi(quality_bonus, 0, 20)
+            orders[i]["service"] = shift.last_service.duplicate(true)
+            if _tutorial_backup.is_empty():
+                _unlock("first_service")
+                if shift.perfect_pours >= 3: _unlock("silky_hands")
+                if shift.result == "SUCCESS": _unlock("five_happy_tables")
+                if shift.result == "SUCCESS" and shift.perfect_services >= 5: _unlock("perfect_shift")
+                if str(shift.last_service.get("personality","")) == "VIP" and quality_bonus >= 16: _unlock("vip_host")
         else:
             return false
         save_data()
@@ -296,6 +315,8 @@ func record_best() -> bool:
     return new_score_best
 
 func reset_demo() -> void:
+    achievements.clear()
+    last_unlocks.clear()
     _tutorial_backup.clear()
     tutorial_completed = false
     cart.clear()
@@ -311,16 +332,26 @@ func reset_demo() -> void:
     orders_changed.emit()
     game_changed.emit()
 
+func _unlock(id: String) -> void:
+    if id not in achievements:
+        achievements.append(id)
+        last_unlocks.append(id)
+
 func _snapshot() -> Dictionary:
-    return {"version":3,"cart":cart.duplicate(true),"orders":orders.duplicate(true),
+    return {"version":4,"cart":cart.duplicate(true),"orders":orders.duplicate(true),
         "next_order_id":next_order_id,"served_count":served_count,"earnings":earnings,
         "xp":xp,"best":best.duplicate(),"shift":shift.snapshot().duplicate(true),
-        "tutorial_completed":tutorial_completed}
+        "tutorial_completed":tutorial_completed,"achievements":achievements.duplicate()}
 
 func begin_tutorial() -> void:
     if not _tutorial_backup.is_empty(): return
     _tutorial_backup = _snapshot()
     start_shift("FREE",0)
+
+func mark_tutorial_complete() -> void:
+    if not _tutorial_backup.is_empty():
+        tutorial_completed = true
+        save_data()
 
 func end_tutorial(completed: bool) -> void:
     if _tutorial_backup.is_empty(): return
@@ -332,6 +363,8 @@ func end_tutorial(completed: bool) -> void:
     earnings = int(_tutorial_backup["earnings"])
     xp = int(_tutorial_backup["xp"])
     best = _tutorial_backup["best"]
+    achievements.assign(_tutorial_backup.get("achievements",[]))
+    last_unlocks.clear()
     shift.restore(_tutorial_backup["shift"])
     _tutorial_backup.clear()
     gameplay_running = false
@@ -365,7 +398,7 @@ func load_data() -> void:
         push_warning("Ignoring invalid save file")
         return
     var state: Dictionary = raw
-    if int(state.get("version", 1)) not in [1, 2, 3]:
+    if int(state.get("version", 1)) not in [1, 2, 3, 4]:
         last_error = "This save belongs to a newer version. It was left untouched."
         persistence_enabled = false
         return
@@ -414,6 +447,7 @@ func load_data() -> void:
             var raw_pours: Variant = candidate.get("perfect_pours",0)
             var crafted_count: int = 0
             for value in clean_crafted.values(): crafted_count += int(value)
+            candidate["craft_quality"] = clampi(int(raw_quality),0,crafted_count*20) if typeof(raw_quality) in [TYPE_INT,TYPE_FLOAT] else 0
             candidate["perfect_pours"] = clampi(int(raw_pours),0,crafted_count) if typeof(raw_pours) in [TYPE_INT,TYPE_FLOAT] else 0
             var clean_preps: Dictionary = {}
             var preps: Variant = candidate.get("preparations", {})
@@ -429,6 +463,10 @@ func load_data() -> void:
     earnings = maxi(0, int(state.get("earnings", 0)))
     xp = maxi(0, int(state.get("xp", served_count * 25)))
     tutorial_completed = state.get("tutorial_completed",false) == true
+    achievements.clear()
+    if typeof(state.get("achievements")) == TYPE_ARRAY:
+        for id in state["achievements"]:
+            if str(id) in ACHIEVEMENTS and str(id) not in achievements: achievements.append(str(id))
     best = {"score": 0, "served": 0, "streak": 0}
     if typeof(state.get("best")) == TYPE_DICTIONARY:
         var best_state: Dictionary = state["best"]

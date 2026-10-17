@@ -34,9 +34,12 @@ func _wait_health(tries: int) -> bool:
         await create_timer(0.25).timeout
     return false
 
-func _spawn_server() -> int:
+func _spawn_server(drop_reply: bool = false) -> int:
     var arguments: PackedStringArray = ["backend/local-server.mjs"]
-    return OS.create_process("node",arguments)
+    OS.set_environment("CAFE_TEST_DROP_FIRST_POST","1" if drop_reply else "0")
+    var pid: int = OS.create_process("node",arguments)
+    OS.unset_environment("CAFE_TEST_DROP_FIRST_POST")
+    return pid
 
 func _revoke(room_id: String, token: String) -> bool:
     var req: HTTPRequest = HTTPRequest.new()
@@ -100,7 +103,7 @@ func _run() -> void:
     await kit.advance(ticket_id,"PREPARING")
     check(str(kit.orders[0]["status"]) == "DONE","Kitchen finishes the ticket")
     await kit.advance(ticket_id,"PREPARING")
-    check(kit.status.contains("already changed"),"A stale transition asks the kitchen to refresh")
+    check(kit.status.contains("Connected"),"A stale transition refreshes authoritative status immediately")
     check(str(kit.orders[0]["status"]) == "DONE","A stale transition leaves the known status intact")
     await create_timer(2.4).timeout
     check(kit.status.contains("Connected"),"Kitchen returns to the auto-refresh cycle after a stale transition")
@@ -119,6 +122,8 @@ func _run() -> void:
     check(not pos._pending_nonce.is_empty(),"A failed submit keeps its retry key")
     check(pos.status.contains("retry when connected"),"A failed submit explains the safe retry")
     var kept_nonce: String = pos._pending_nonce
+    await pos.submit({"brownie":1},"Other Guest","9")
+    check(pos._pending_nonce == kept_nonce and pos.status.contains("previous ticket"),"Uncertain submission cannot be overwritten by a different cart")
 
     var cold: Node = load("res://scripts/kitchen_sync.gd").new()
     root.add_child(cold)
@@ -126,11 +131,16 @@ func _run() -> void:
     await cold.create_room()
     check(not cold.active and cold.status.contains("retry when connected"),"Offline room creation fails gracefully")
 
-    var pid2: int = _spawn_server()
+    var pid2: int = _spawn_server(true)
     check(pid2 > 0,"Local kitchen server restarts")
     var up2: bool = await _wait_health(40)
     check(up2,"Restarted server answers health checks")
 
+    await pos.submit({"cookie":1},"Test Guest","7")
+    check(pos._pending_nonce == kept_nonce,"Lost server acknowledgement retains the SAME retry key")
+    while kit._polling: await process_frame
+    await kit.poll()
+    check(kit.orders.size() == 2,"Server committed the ticket before its reply was lost")
     await pos.submit({"cookie":1},"Test Guest","7")
     check(pos._pending_nonce.is_empty(),"A successful retry clears the retry key")
     check(sent.size() == 2,"The till is told when the retried ticket lands")
@@ -148,6 +158,9 @@ func _run() -> void:
 
     var revoked: bool = await _revoke(saved_room,saved_token)
     check(revoked,"Temporary test room is revoked")
+    await kit.poll()
+    check(kit.polling_suspended and kit.status.contains("expired"),"Revoked room stops automatic retries and gives recovery instructions")
+    check(not kit.orders.is_empty(),"Terminal connection error preserves the last known tickets")
 
     OS.kill(pid2)
     for node in [pos,kit,cold,pos2]:

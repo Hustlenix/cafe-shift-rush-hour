@@ -15,6 +15,10 @@ const server=createServer(async(req,res)=>{
   for await(const chunk of req){size+=chunk.length;if(size>8192){res.writeHead(413);res.end();return;}chunks.push(chunk);}
   const request=new Request('http://127.0.0.1:8790'+req.url,{method:req.method,headers:req.headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)});
   const response=await worker.fetch(request,{DB,storageName:'SQLite development'});
+  // Development-only fault injection: commit a ticket, then lose its acknowledgement.
+  if(process.env.CAFE_TEST_DROP_FIRST_POST==='1' && req.method==='POST' && /\/orders$/.test(req.url) && response.ok){
+   process.env.CAFE_TEST_DROP_FIRST_POST='0';res.destroy();return;
+  }
   res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()));
  }catch{res.writeHead(500);res.end('Development request failed.');}
 });

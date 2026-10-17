@@ -17,6 +17,8 @@ var progress: Label
 var finish: Button
 var skip: Button
 var delivering: bool = false
+var event_label: Label
+var connection: Label
 
 func _ready() -> void:
     set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -59,6 +61,14 @@ func _ready() -> void:
     progress = host._label("",16,Color("fff3d2"))
     progress.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     box.add_child(progress)
+    event_label = host._label("",14,Color("f0be6f"))
+    event_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    event_label.hide()
+    box.add_child(event_label)
+    connection = host._label("",14,Color("6da18b"))
+    connection.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    connection.hide()
+    box.add_child(connection)
     bench = preload("res://scripts/prep_bench.gd").new()
     bench.size_flags_vertical = Control.SIZE_EXPAND_FILL
     bench.custom_minimum_size.y = 230
@@ -83,6 +93,8 @@ func open_ticket(value: Dictionary, remote: bool = false) -> void:
     delivering = false
     heading.text = "TICKET #%d · %s" % [ticket_id,str(order.get("customer","Guest"))]
     skip.visible = host.flow.state == host.flow.State.TUTORIAL
+    connection.visible = online
+    connection.text = KitchenSync.status if online else ""
     bench.reduced_motion = host.motion_off
     items.columns = 2 if size.x < 700 else 4
     _build_items()
@@ -168,7 +180,7 @@ func _refresh() -> void:
             button.text = "%s %d/%d" % [str(OrderStore.find_product(id)["name"]).replace("Butter ","").replace("Honey ",""),count,int(line["qty"])]
             button.disabled = count >= int(line["qty"])
     progress.text = "%d / %d on the tray · %s" % [done,total,"Ready to serve!" if done == total else "Make each item. Checkpoints save as you work."]
-    finish.disabled = done != total or delivering
+    finish.disabled = done != total or delivering or (online and (not KitchenSync.active or KitchenSync.busy or KitchenSync.polling_suspended))
     finish.text = "Serve %s's tray  >" % order.get("customer","Guest") if done == total else "Prepare the requested items first"
 
 func _save_remote() -> void:
@@ -197,7 +209,16 @@ func close_station() -> void:
     set_process(false)
 
 func _validate_remote() -> void:
+    if not KitchenSync.active: remote_progress.clear()
     if visible and online and (not KitchenSync.active or KitchenSync.room != room_id): close_station()
+    if visible and online:
+        connection.text = KitchenSync.status
+        connection.add_theme_color_override("font_color",Color("6da18b") if KitchenSync.status.begins_with("Connected") else Color("e7ba72"))
+        _refresh()
+        for ticket in KitchenSync.orders:
+            if int(ticket["id"]) == ticket_id and str(ticket["status"]) == "DONE" and not delivering:
+                close_station()
+                host._notify("Ticket #%d was completed by another kitchen. The rail is up to date." % ticket_id)
 
 func _unhandled_key_input(event: InputEvent) -> void:
     if visible and event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:

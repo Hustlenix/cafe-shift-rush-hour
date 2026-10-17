@@ -278,16 +278,18 @@ func _run() -> void:
     store.shift.served = 5
     store.shift.missed = 0
     store.shift.score = 210
+    store.shift.quality_total = 100
     store.shift.tips_total = 30
     store.shift.best_streak = 5
+    app.flow.playing("RUSH")
     app._shown_result = ""
     root.gui_embed_subwindows = true
     app._process(0.0)
     await _frames(4)
     check(app._results.visible,"Shift report opens for a finished shift")
-    check(app._results.dialog_text.contains("NEW BEST"),"A record run is flagged as NEW BEST")
-    check(app._results.dialog_text.contains("PERFECT SHIFT"),"A perfect shift earns the top rating")
-    check(app._results.dialog_text.contains("Tips Rs 30"),"Tips are visible in the report")
+    check(app._results.report_text.contains("NEW BEST"),"A record run is flagged as NEW BEST")
+    check(app._results.report_text.contains("PERFECT SHIFT"),"A perfect shift earns the top rating")
+    check(app._results.report_text.contains("Tips Rs 30"),"Tips are visible in the report")
     var filled_stars: int = 0
     for star in app._star_row.get_children():
         if bool(star.get("filled")):

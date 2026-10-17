@@ -21,9 +21,10 @@ var _generation: int = 0
 var _pending_nonce: String = ""
 var _pending_body: String = ""
 var _request: HTTPRequest
+var polling_suspended: bool = false
 
 func _process(delta: float) -> void:
-    if not active or busy or _polling:
+    if not active or busy or _polling or polling_suspended:
         return
     _clock += delta
     if _clock >= _backoff:
@@ -82,6 +83,7 @@ func create_room() -> void:
     changed.emit()
     var response: Dictionary = await _api("/api/rooms",HTTPClient.METHOD_POST)
     busy = false
+    if response.get("cancelled",false): return
     if not response.get("ok",false):
         status = str(response.get("error","Service unavailable."))
         changed.emit()
@@ -91,6 +93,7 @@ func create_room() -> void:
     kitchen_code = str(response.get("kitchen_code",""))
     role = "POS"
     active = true
+    polling_suspended = false
     _backoff = 2
     await poll()
 
@@ -111,6 +114,7 @@ func join_room(code: String) -> void:
     changed.emit()
     var response: Dictionary = await _api(_path())
     busy = false
+    if response.get("cancelled",false): return
     if not response.get("ok",false) or str(response.get("role","")) != "KITCHEN":
         token = ""
         room = ""
@@ -119,6 +123,7 @@ func join_room(code: String) -> void:
         return
     role = "KITCHEN"
     active = true
+    polling_suspended = false
     _apply(response)
 
 func poll() -> void:
@@ -127,15 +132,32 @@ func poll() -> void:
     _polling = true
     var response: Dictionary = await _api(_path())
     _polling = false
-    if not active:
+    if not active or response.get("cancelled",false):
         return
     if response.get("ok",false):
         _apply(response)
         _backoff = 2
     else:
         _backoff = minf(20,_backoff*2)
-        status = str(response.get("error","Reconnecting…"))+" · retrying automatically"
+        _failure(response)
         changed.emit()
+
+func _failure(response: Dictionary) -> void:
+    polling_suspended = int(response.get("http_status",0)) in [401,403,404,410]
+    status = "Room code invalid or expired. Disconnect, then create or join a room." if polling_suspended else str(response.get("error","Reconnecting…")) + " · retrying automatically"
+
+func retry_now() -> void:
+    if busy or _polling or not active: return
+    if not _pending_body.is_empty():
+        var payload: Dictionary = JSON.parse_string(_pending_body)
+        var cart: Dictionary = {}
+        for line in payload["items"]: cart[str(line["id"])] = int(line["qty"])
+        submit(cart,str(payload["customer"]),str(payload["table"]))
+    elif not polling_suspended:
+        poll()
+
+func has_pending_order() -> bool:
+    return not _pending_body.is_empty()
 
 func _apply(response: Dictionary) -> void:
     var updated: Array[Dictionary] = []
@@ -144,6 +166,7 @@ func _apply(response: Dictionary) -> void:
             if typeof(candidate) == TYPE_DICTIONARY and typeof(candidate.get("items")) == TYPE_ARRAY and str(candidate.get("status","")) in ["NEW","PREPARING","DONE"]:
                 updated.append(candidate)
     var new_status: String = "Connected · %s · auto refresh every 2s" % role
+    if has_pending_order(): new_status += " · ticket awaiting Retry"
     if orders != updated or status != new_status:
         orders = updated
         status = new_status
@@ -159,9 +182,15 @@ func submit(cart: Dictionary, customer: String, table: String) -> void:
         changed.emit()
         return
     var lines: Array[Dictionary] = []
-    for id in cart:
+    var ids: Array = cart.keys()
+    ids.sort()
+    for id in ids:
         lines.append({"id":str(id),"qty":int(cart[id])})
     var fingerprint: String = JSON.stringify({"items":lines,"customer":customer,"table":table})
+    if not _pending_body.is_empty() and fingerprint != _pending_body:
+        status = "The previous ticket needs confirmation. Use Retry before sending another order."
+        changed.emit()
+        return
     if fingerprint != _pending_body:
         _pending_body = fingerprint
         _pending_nonce = _nonce()
@@ -175,13 +204,18 @@ func submit(cart: Dictionary, customer: String, table: String) -> void:
     changed.emit()
     var response: Dictionary = await _api(_path(),HTTPClient.METHOD_POST,{"nonce":_pending_nonce,"items":lines,"customer":customer,"table":table})
     busy = false
+    if response.get("cancelled",false): return
     if response.get("ok",false):
         _pending_body = ""
         _pending_nonce = ""
         order_sent.emit(int(response["order"]["id"]))
         await poll()
     else:
-        status = str(response.get("error","Could not send. Your cart was preserved."))
+        if int(response.get("http_status",0)) in [400,409,413,422,429]:
+            _pending_body = ""
+            _pending_nonce = ""
+        _failure(response)
+        if has_pending_order(): status += " · Retry checks the SAME ticket; your cart is safe."
         changed.emit()
 
 func advance(id: int, expected_status: String) -> void:
@@ -197,8 +231,12 @@ func advance(id: int, expected_status: String) -> void:
     changed.emit()
     var response: Dictionary = await _api(_path()+"/"+str(id),HTTPClient.METHOD_PATCH,{"expected_status":expected_status})
     busy = false
+    if response.get("cancelled",false): return
     if not response.get("ok",false):
-        status = str(response.get("error","Could not update ticket."))
+        if int(response.get("http_status",0)) == 409:
+            await poll()
+            return
+        _failure(response)
         changed.emit()
         return
     await poll()
@@ -206,6 +244,7 @@ func advance(id: int, expected_status: String) -> void:
 func disconnect_room() -> void:
     _generation += 1
     active = false
+    polling_suspended = false
     role = ""
     room = ""
     token = ""

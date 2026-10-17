@@ -27,6 +27,7 @@ var satisfaction_total: int = 0
 var perfect_pours: int = 0
 var perfect_services: int = 0
 var last_service: Dictionary = {}
+var events := preload("res://scripts/rush_events.gd").new()
 
 func _init() -> void:
     generator.restart()
@@ -36,6 +37,7 @@ func phase() -> int:
 
 func start(value: String, seed_value: int = -1) -> void:
     generator.restart(seed_value)
+    events.reset()
     quality_total = 0
     satisfaction_total = 0
     perfect_pours = 0
@@ -105,7 +107,7 @@ func completed(order_id: int, quality: int = 0, pours: int = 0) -> int:
                 if personality == "Generous" and excellent: tip += 18
                 streak = streak + 1 if float(requests[i]["patience"]) > 0 else 0
                 bonus = tip + mini(15, streak * 3)
-                var multiplier: int = 2 if personality == "VIP" and excellent else 1
+                var multiplier: int = 2 if (personality == "VIP" and excellent) or (events.active_id == "PERFECT" and excellent and quick and pours > 0) else 1
                 bonus += (25 + bonus + quality) * (multiplier-1)
                 tips_total += tip
                 best_streak = maxi(best_streak, streak)
@@ -121,6 +123,7 @@ func completed(order_id: int, quality: int = 0, pours: int = 0) -> int:
             if mode == "RUSH" and active and served >= 5:
                 active = false
                 result = "SUCCESS"
+                events.stop()
             elif mode == "FREE":
                 welcome()
             return bonus
@@ -128,6 +131,7 @@ func completed(order_id: int, quality: int = 0, pours: int = 0) -> int:
 
 func arrival_interval() -> float:
     # The rush builds: each served order tightens the arrival cadence (12s → 8s).
+    if events.active_id == "LUNCH": return 4.0
     return maxf(8.0, 12.0 - 0.8 * float(served)) if generator.seed_value == 0 else [18.0,14.0,10.0][phase()]
 
 func tick(delta: float) -> bool:
@@ -136,7 +140,9 @@ func tick(delta: float) -> bool:
     elapsed += delta
     remaining = maxf(0.0, remaining - delta)
     arrival_clock += delta
-    var changed: bool = false
+    var previous_event: String = events.active_id
+    var changed: bool = events.tick(elapsed) if generator.seed_value != 0 else false
+    if events.active_id == "LUNCH" and previous_event != "LUNCH": welcome()
     for i in range(requests.size() - 1, -1, -1):
         requests[i]["patience"] = maxf(0.0, float(requests[i]["patience"]) - delta)
         # Submitted kitchen tickets remain valid; late service loses the tip.
@@ -149,9 +155,14 @@ func tick(delta: float) -> bool:
     if arrival_clock >= arrival_interval():
         arrival_clock = 0.0
         changed = not welcome().is_empty() or changed
+    if events.vip_pending and requests.size() < 3:
+        welcome("VIP")
+        events.vip_pending = false
+        changed = true
     if remaining <= 0:
         active = false
         result = "TIMEOUT"
+        events.stop()
         changed = true
     return changed
 
@@ -161,7 +172,7 @@ func snapshot() -> Dictionary:
         "missed": missed, "streak": streak, "score": score, "result": result,
         "tips_total": tips_total, "best_streak": best_streak, "requests": requests,
         "generator":generator.snapshot(),"quality_total":quality_total,"satisfaction_total":satisfaction_total,
-        "perfect_pours":perfect_pours,"perfect_services":perfect_services}
+        "perfect_pours":perfect_pours,"perfect_services":perfect_services,"events":events.snapshot()}
 
 func restore(data: Dictionary) -> void:
     if data.is_empty():
@@ -181,12 +192,15 @@ func restore(data: Dictionary) -> void:
     tips_total = maxi(0, int(data.get("tips_total", 0)))
     best_streak = maxi(0, int(data.get("best_streak", 0)))
     left_out = ""
-    generator.restore(data.get("generator",{}))
+    var generator_data: Variant = data.get("generator",{})
+    generator.restore(generator_data if typeof(generator_data) == TYPE_DICTIONARY else {})
     quality_total = maxi(0,int(data.get("quality_total",0)))
     satisfaction_total = maxi(0,int(data.get("satisfaction_total",0)))
     perfect_pours = maxi(0,int(data.get("perfect_pours",0)))
     perfect_services = maxi(0,int(data.get("perfect_services",0)))
     last_service.clear()
+    var event_data: Variant = data.get("events",{})
+    events.restore(event_data if typeof(event_data) == TYPE_DICTIONARY else {})
     requests.clear()
     if typeof(data.get("requests")) != TYPE_ARRAY:
         return
@@ -195,6 +209,7 @@ func restore(data: Dictionary) -> void:
             continue
         if not r.has_all(["id", "name", "state", "order_id", "patience", "table"]):
             continue
+        if typeof(r["order_id"]) not in [TYPE_INT,TYPE_FLOAT] or typeof(r["patience"]) not in [TYPE_INT,TYPE_FLOAT]: continue
         if str(r["state"]) not in ["WAITING", "KITCHEN"]:
             continue
         var valid: bool = true
@@ -208,6 +223,7 @@ func restore(data: Dictionary) -> void:
             # JSON numbers are floats; recipe matching uses integer cart counts.
             r["recipe"] = recipe
             r["order_id"] = int(r["order_id"])
-            r["max_patience"] = clampf(float(r.get("max_patience",65)),1,150)
+            var patience_limit: Variant = r.get("max_patience",65)
+            r["max_patience"] = clampf(float(patience_limit),1,150) if typeof(patience_limit) in [TYPE_INT,TYPE_FLOAT] else 65.0
             r["patience"] = clampf(float(r["patience"]), 0, float(r["max_patience"]))
             requests.append(r)

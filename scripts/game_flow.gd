@@ -39,6 +39,8 @@ func _ready() -> void:
     host._sync_dialog.visibility_changed.connect(func():
         if state == State.ONLINE_LOBBY and not host._sync_dialog.visible and not KitchenSync.active: show_welcome()
     )
+    for dialog in [host._sync_dialog,host._options,host._restart,host._reset,host._results]:
+        dialog.visibility_changed.connect(_update_running)
     show_welcome()
 
 func _enter(next: State) -> void:
@@ -47,12 +49,12 @@ func _enter(next: State) -> void:
     strip.visible = state == State.TUTORIAL
     host._margin.visible = state != State.WELCOME
     host._margin.offset_top = 112 if state == State.TUTORIAL else 0
-    OrderStore.gameplay_running = state in [State.PRACTICE,State.RUSH,State.TUTORIAL] and not KitchenSync.active
+    _update_running()
     OrderStore.set_process(true) # The store's explicit guard remains authoritative.
     for id in ["Welcome","WalkIn","FreePlay","RushHour","OpenSync","Options"]:
         var control: Button = host.find_child(id,true,false)
         if control != null: control.disabled = state == State.TUTORIAL
-    if state != State.TUTORIAL: host._stage_row.get_parent().show()
+    if state != State.TUTORIAL: host._stage_row.get_parent().visible = not KitchenSync.active
 
 func show_welcome(success: bool = false) -> void:
     var was_tutorial: bool = state == State.TUTORIAL
@@ -69,7 +71,7 @@ func show_welcome(success: bool = false) -> void:
 
 func _action(action: String) -> void:
     if action == "SETTINGS":
-        host._options.popup_centered(Vector2i(400,440))
+        host._open_options()
         return
     if action == "RESUME":
         _enter(State.ONLINE if KitchenSync.active else (State.RUSH if OrderStore.shift.mode == "RUSH" else State.PRACTICE))
@@ -134,6 +136,7 @@ func _orders_changed() -> void:
         "NEW": step = 3
         "PREPARING": step = 5
         "DONE":
+            OrderStore.mark_tutorial_complete()
             step = 6
             prompt.text = "First order complete! Your guest is happy."
             _finish_later()
@@ -205,5 +208,12 @@ func _show_guide() -> void:
             parent = parent.get_parent()
 
 func _sync_changed() -> void:
-    if state in [State.ONLINE_LOBBY,State.ONLINE] and KitchenSync.active: _enter(State.ONLINE)
-    OrderStore.gameplay_running = state in [State.PRACTICE,State.RUSH,State.TUTORIAL] and not KitchenSync.active
+    if state == State.ONLINE and not KitchenSync.active:
+        show_welcome()
+        return
+    if KitchenSync.active: _enter(State.ONLINE)
+    _update_running()
+
+func _update_running() -> void:
+    var modal: bool = host._sync_dialog.visible or host._options.visible or host._restart.visible or host._reset.visible or host._results.visible
+    OrderStore.gameplay_running = state in [State.PRACTICE,State.RUSH,State.TUTORIAL] and not KitchenSync.active and not modal

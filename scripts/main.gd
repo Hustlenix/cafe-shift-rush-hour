@@ -84,9 +84,11 @@ var _receipt_panel: PanelContainer
 var _kitchen_columns: Array[PanelContainer] = []
 var _sync_box: VBoxContainer
 var _sync_help: Label
+var _sync_scroll: ScrollContainer
 var flow: Node
 var prep_station: Control
 var kitchen_actions: RefCounted
+var feedback: Node
 
 func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -129,6 +131,10 @@ func _ready() -> void:
     add_child(prep_station)
     kitchen_actions = preload("res://scripts/kitchen_actions.gd").new()
     kitchen_actions.host = self
+    feedback = preload("res://scripts/cafe_feedback.gd").new()
+    feedback.host = self
+    add_child(feedback)
+    _load_preferences()
 
 func _process(_delta: float) -> void:
     if is_instance_valid(flow) and flow.state == flow.State.WELCOME:
@@ -143,7 +149,7 @@ func _process(_delta: float) -> void:
         var lost: int = OrderStore.shift.missed - _last_missed
         _last_missed = OrderStore.shift.missed
         _notify("%d guest%s left without ordering. Watch the red patience bar." % [lost, "" if lost == 1 else "s"])
-        _play("error")
+        _play("walkout")
         var left_id: String = OrderStore.shift.left_out
         if not left_id.is_empty():
             if is_instance_valid(_world) and _world.has_method("float_text"):
@@ -170,24 +176,30 @@ func _process(_delta: float) -> void:
                 if _patience_colors.get(id, GREEN) != urgency_color:
                     _patience_colors[id] = urgency_color
                     _patience[id].add_theme_stylebox_override("fill", _box(urgency_color, urgency_color, 2, 0))
-    if not KitchenSync.active and not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
+    if is_instance_valid(flow) and flow.state == flow.State.RUSH and not KitchenSync.active and not _sync_dialog.visible and not _options.visible and not _restart.visible and not OrderStore.shift.result.is_empty() and _shown_result != OrderStore.shift.result:
         if prep_station.visible: prep_station.close_station()
         _shown_result = OrderStore.shift.result
         var served: int = OrderStore.shift.served
         var missed: int = OrderStore.shift.missed
-        var stars: int = 3 if served >= 5 and missed == 0 else (2 if served >= 5 else (1 if served >= 3 else 0))
+        var excellent: bool = OrderStore.shift.quality_total >= 16*maxi(1,served)
+        var stars: int = 3 if served >= 5 and missed == 0 and excellent else (2 if served >= 5 else (1 if served >= 3 else 0))
+        var previous_best: int = int(OrderStore.best.get("score",0))
         var new_best: bool = OrderStore.record_best()
         _set_stars(stars)
         var rating: String = ["A quiet shift", "GOOD SHIFT", "GREAT SHIFT", "PERFECT SHIFT"][stars]
         var banner: String = "NEW BEST · %d shift XP\n" % OrderStore.shift.score if new_best else ""
         _results.title = "A shift to remember!" if _shown_result == "SUCCESS" else "That's the afternoon rush!"
-        _results.dialog_text = "%s%d / 5 requests served\n%d shift XP · Rs %d earned\n%d customers left before ordering\nTips Rs %d · best streak ×%d\n\n%s\n%s" % [banner, served, OrderStore.shift.score, OrderStore.earnings, missed, OrderStore.shift.tips_total, OrderStore.shift.best_streak, rating,
+        _results.report_text = "%s%d / 5 requests served\n%d shift XP · Rs %d earned\n%d customers left before ordering\nTips Rs %d · best streak ×%d\n\n%s\n%s" % [banner, served, OrderStore.shift.score, OrderStore.earnings, missed, OrderStore.shift.tips_total, OrderStore.shift.best_streak, rating,
             "Five happy tables. The regulars will be back." if _shown_result == "SUCCESS" else "Try welcoming fewer customers and clear the kitchen early."]
-        _results.popup_centered(Vector2i(400,420) if _phone_mode else Vector2i(520,380))
+        _results.report_text += "\n\nQuality %d%% · satisfaction %d%%\n%d perfect pours · Previous best %d (%+d)" % [roundi(5.0*OrderStore.shift.quality_total/maxi(1,served)),OrderStore.shift.satisfaction_total/maxi(1,served),OrderStore.shift.perfect_pours,previous_best,OrderStore.shift.score-previous_best]
+        _results.report_text += "\nAchievements: %d / %d" % [OrderStore.achievements.size(),OrderStore.ACHIEVEMENTS.size()]
+        for id in OrderStore.last_unlocks: _results.report_text += "\n★ " + str(OrderStore.ACHIEVEMENTS[id])
+        _results.present()
         if _shown_result == "SUCCESS":
             if not motion_off and is_instance_valid(_world) and _world.has_method("confetti"):
                 _world.call("confetti")
             _play("fanfare")
+        else: _play("failure")
 
 func _schedule_refresh() -> void:
     if _refresh_pending:
@@ -205,6 +217,15 @@ func _on_sync_changed() -> void:
     OrderStore.set_process(not KitchenSync.active)
     _sync_status.text = KitchenSync.status
     _sync_code.text = KitchenSync.kitchen_code
+    _stage_row.get_parent().visible = not KitchenSync.active
+    _xp.visible = not KitchenSync.active
+    _btn_sync.text = ("Live" if _phone_mode else "Connected · "+KitchenSync.role) if KitchenSync.active else ("Sync" if _phone_mode else "Connect devices")
+    _btn_sync.tooltip_text = KitchenSync.status
+    find_child("CreateRoom",true,false).disabled = KitchenSync.active or KitchenSync.busy
+    find_child("JoinRoom",true,false).disabled = KitchenSync.active or KitchenSync.busy
+    find_child("CopyCode",true,false).disabled = KitchenSync.kitchen_code.is_empty()
+    find_child("RetrySync",true,false).disabled = not KitchenSync.active or KitchenSync.busy or KitchenSync.polling_suspended
+    _sync_endpoint.editable = not KitchenSync.active and not KitchenSync.busy
     _notify(KitchenSync.status)
     _schedule_refresh()
     if KitchenSync.active and KitchenSync.role == "KITCHEN":
@@ -264,7 +285,7 @@ func _button(text: String, action: Callable, primary: bool = false, node_name: S
     b.text = text
     if not node_name.is_empty():
         b.name = node_name
-    b.custom_minimum_size.y = 38
+    b.custom_minimum_size.y = 48
     b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
     b.add_theme_font_size_override("font_size", 14)
     b.add_theme_color_override("font_color", PAPER if primary else INK)
@@ -289,7 +310,7 @@ func _input_field(placeholder: String, node_name: String) -> LineEdit:
     var field := LineEdit.new()
     field.name = node_name
     field.placeholder_text = placeholder
-    field.custom_minimum_size.y = 38
+    field.custom_minimum_size.y = 48
     field.max_length = 28
     field.add_theme_stylebox_override("normal", _box(PAPER, LINE, 6, 8))
     field.add_theme_stylebox_override("focus", _box(PAPER, GREEN, 6, 8))
@@ -301,7 +322,7 @@ func _input_field(placeholder: String, node_name: String) -> LineEdit:
 
 func _icon(id: String, icon_size: int = 48) -> TextureRect:
     var r := TextureRect.new()
-    r.texture = load("res://assets/original/%s.png" % id)
+    r.texture = preload("res://scripts/recipes.gd").texture(id)
     r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
     r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
     r.custom_minimum_size = Vector2(icon_size,icon_size)
@@ -349,7 +370,7 @@ func _build_ui() -> void:
     _tabs.add_child(_tab_kitchen)
     _tabs.add_child(_button("Menu",func(): flow.show_welcome(),false,"MainMenu"))
     _tabs.add_child(_spacer())
-    _btn_options = _button("Options",func(): _options.popup_centered(Vector2i(400,320)),false,"Options")
+    _btn_options = _button("Options",_open_options,false,"Options")
     _tabs.add_child(_btn_options)
     _btn_sync = _button("Connect devices", _open_sync, false, "OpenSync")
     _tabs.add_child(_btn_sync)
@@ -421,9 +442,9 @@ func _update_layout() -> void:
     for column in _kitchen_columns:
         column.custom_minimum_size.y = 230 if _phone_mode else 0
     var sync_width: float = 340.0 if _phone_mode else 500.0
-    _sync_box.custom_minimum_size.x = sync_width
-    _sync_help.custom_minimum_size.x = sync_width
-    _sync_status.custom_minimum_size.x = sync_width
+    _sync_box.custom_minimum_size.x = sync_width-24
+    _sync_help.custom_minimum_size.x = sync_width-24
+    _sync_status.custom_minimum_size.x = sync_width-24
     _update_tab_labels()
     _stabilize_desk_pages()
     if is_instance_valid(flow): flow._guide()
@@ -608,12 +629,13 @@ func _refresh_menu() -> void:
         if not search_query.strip_edges().is_empty() and not (str(product["name"])+" "+str(product["description"])).to_lower().contains(search_query.to_lower().strip_edges()):
             continue
         var card: PanelContainer = _panel(Color("f1dfb9"))
+        card.name = "Product_" + str(product["id"])
         card.custom_minimum_size = Vector2(118,62)
         card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         var column: VBoxContainer = _column(2)
         card.add_child(column)
         var top: HBoxContainer = _row(5)
-        top.add_child(_icon(str(product["id"]),20))
+        top.add_child(_icon(str(product["id"]),36))
         var name: Label = _label(str(product["name"]),14)
         name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -627,7 +649,7 @@ func _refresh_menu() -> void:
         bottom.add_child(_spacer())
         var id: String = str(product["id"])
         var add: Button = _button("ADD",func(): OrderStore.add_item(id),false,"Add_"+id)
-        add.custom_minimum_size = Vector2(48,44)
+        add.custom_minimum_size = Vector2(52,52)
         add.add_theme_font_size_override("font_size",11)
         bottom.add_child(add)
         column.add_child(bottom)
@@ -647,13 +669,21 @@ func _refresh_cart() -> void:
     if not is_instance_valid(_cart_list):
         return
     _clear(_cart_list)
+    for product in OrderStore.MENU:
+        var id: String = str(product["id"])
+        var card: PanelContainer = _menu_grid.get_node_or_null("Product_"+id)
+        if card != null:
+            var count: int = int(OrderStore.cart.get(id,0))
+            card.add_theme_stylebox_override("panel",_box(Color("ead09e") if count > 0 else Color("f1dfb9"),GOLD if count > 0 else LINE,6,9))
+            var add: Button = card.find_child("Add_"+id,true,false)
+            add.text = "+ (%d)" % count if count > 0 else "ADD"
     _cart_count.text = "%d items" % OrderStore.cart_item_count()
     _total.text = "TOTAL     Rs %d" % OrderStore.cart_total()
     _walk_in.disabled = (not KitchenSync.active and OrderStore.shift.mode == "RUSH") or (is_instance_valid(flow) and flow.state == flow.State.TUTORIAL)
     var request: Dictionary = OrderStore.shift.find_request(selected_request)
     var request_mismatch: bool = not KitchenSync.active and not selected_request.is_empty() and (request.is_empty() or not OrderStore.shift.matches(selected_request, OrderStore.cart))
     var rush_without_guest: bool = not KitchenSync.active and OrderStore.shift.mode == "RUSH" and selected_request.is_empty()
-    _send.disabled = OrderStore.cart.is_empty() or (not KitchenSync.active and OrderStore.shift.mode == "RUSH" and not OrderStore.shift.active) or KitchenSync.busy or (KitchenSync.active and KitchenSync.role != "POS") or request_mismatch or rush_without_guest
+    _send.disabled = OrderStore.cart.is_empty() or (not KitchenSync.active and OrderStore.shift.mode == "RUSH" and not OrderStore.shift.active) or KitchenSync.busy or (KitchenSync.active and (KitchenSync.role != "POS" or KitchenSync.has_pending_order())) or request_mismatch or rush_without_guest
     _send.text = "Send to kitchen  >" if KitchenSync.active or request.is_empty() else "Send %s's ticket  >" % request["name"]
     _update_request_prompt()
     if OrderStore.cart.is_empty():
@@ -671,11 +701,11 @@ func _refresh_cart() -> void:
         r.add_child(_spacer())
         var product_id: String = str(id)
         var minus: Button = _button("−",func(): OrderStore.change_quantity(product_id,-1),false,"Minus_"+product_id)
-        minus.custom_minimum_size = Vector2(44,44)
+        minus.custom_minimum_size = Vector2(52,52)
         r.add_child(minus)
         r.add_child(_label(str(count),14,PAPER))
         var plus: Button = _button("+",func(): OrderStore.change_quantity(product_id,1),false,"Plus_"+product_id)
-        plus.custom_minimum_size = Vector2(44,44)
+        plus.custom_minimum_size = Vector2(52,52)
         r.add_child(plus)
         c.add_child(r)
         _cart_list.add_child(p)
@@ -849,6 +879,13 @@ func _update_request_prompt() -> void:
         if int(OrderStore.cart[key]) > int(recipe.get(key, 0)):
             extras = true
     var progress: String = "%d/%d items packed" % [matched_count, target_count]
+    var corrections: PackedStringArray = []
+    for key in recipe:
+        var shortfall: int = int(recipe[key])-int(OrderStore.cart.get(key,0))
+        if shortfall > 0: corrections.append("Add %d %s" % [shortfall,OrderStore.find_product(str(key))["name"]])
+    for key in OrderStore.cart:
+        var excess: int = int(OrderStore.cart[key])-int(recipe.get(key,0))
+        if excess > 0: corrections.append("Remove %d %s" % [excess,OrderStore.find_product(str(key))["name"]])
     if OrderStore.shift.matches(selected_request, OrderStore.cart):
         _request_prompt.text = "REQUEST  ·  %s\n%s\nPERFECT MATCH  ·  ready for the kitchen" % [request["name"], _recipe_summary(recipe)]
         _request_prompt.add_theme_color_override("font_color", GREEN)
@@ -858,12 +895,16 @@ func _update_request_prompt() -> void:
     else:
         _request_prompt.text = "REQUEST  ·  %s\n%s\n%s  ·  use + Add on the menu" % [request["name"], _recipe_summary(recipe), progress]
         _request_prompt.add_theme_color_override("font_color", MUTED)
+    if not corrections.is_empty(): _request_prompt.text += "\n" + "; ".join(corrections)
 
 func _place_order() -> void:
     if is_instance_valid(flow) and flow.state == flow.State.TUTORIAL and flow.step >= 3:
         _notify("Amelia's ticket is already printed. Open Kitchen to finish it.")
         return
     if KitchenSync.active:
+        if KitchenSync.has_pending_order():
+            _notify("Previous ticket awaiting confirmation. Open Sync and choose Retry.")
+            return
         _submitted_cart = OrderStore.cart.duplicate()
         KitchenSync.submit(_submitted_cart,_name.text,_table.text)
         return
@@ -873,6 +914,7 @@ func _place_order() -> void:
         _notify(OrderStore.last_error)
         return
     _play("order")
+    _flash_pending[id] = Color(1.4,1.3,1.1)
     selected_request = ""
     _name.clear()
     _table.clear()
@@ -934,8 +976,10 @@ func _refresh_kitchen() -> void:
         if _flash_pending.has(id):
             p.modulate = _flash_pending[id]
             _flash_pending.erase(id)
-            var flash: Tween = p.create_tween()
-            flash.tween_property(p,"modulate",Color.WHITE,0.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+            if motion_off: p.modulate = Color.WHITE
+            else:
+                var flash: Tween = p.create_tween()
+                flash.tween_property(p,"modulate",Color.WHITE,0.35).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
     for status in _tickets:
         if _tickets[status].get_child_count() == 0:
             var empty: Label = _label({"NEW":"The printer is quiet.\nOrders appear here as soon as they're sent.","PREPARING":"Room on the counter.\nStart a new ticket to get cooking.","DONE":"Happy tables ahead.\nFinish a ticket to earn XP."}[status],14,MUTED)
@@ -976,6 +1020,27 @@ func _play(id: String) -> void:
         _audio.play()
     if music_on and is_instance_valid(_music) and _music.stream != null and not _music.playing:
         _music.play()
+
+func _save_preferences() -> void:
+    if not OrderStore.persistence_enabled: return
+    var config := ConfigFile.new()
+    config.set_value("play","sound",sound_on)
+    config.set_value("play","music",music_on)
+    config.set_value("play","motion",motion_off)
+    config.save("user://cafe_shift_settings.cfg")
+
+func _load_preferences() -> void:
+    if not OrderStore.persistence_enabled: return
+    var config := ConfigFile.new()
+    if config.load("user://cafe_shift_settings.cfg") != OK: return
+    sound_on = bool(config.get_value("play","sound",true))
+    music_on = bool(config.get_value("play","music",true))
+    motion_off = bool(config.get_value("play","motion",false))
+    find_child("SoundToggle",true,false).set_pressed_no_signal(sound_on)
+    find_child("MusicToggle",true,false).set_pressed_no_signal(music_on)
+    find_child("MotionToggle",true,false).set_pressed_no_signal(motion_off)
+    _world.reduced_motion = motion_off
+    if not music_on: _music.stop()
 
 func _update_clock_urgency() -> void:
     ## Rush clock pressure: coral under 30 s, pulse and ticks under 10 s.
@@ -1071,7 +1136,8 @@ func _style_dialog(dialog: AcceptDialog) -> void:
     skin.set_stylebox("embedded_border","Window",border)
     skin.set_color("title_color","Window",PAPER)
     skin.set_color("font_color","Label",INK)
-    skin.set_color("font_color","Button",INK)
+    skin.set_color("font_color","Button",PAPER)
+    skin.set_color("font_focus_color","Button",PAPER)
     skin.set_color("font_hover_color","Button",INK)
     skin.set_color("font_pressed_color","Button",INK)
     skin.set_stylebox("normal","Button",_box(BG,LINE,6,9))
@@ -1099,6 +1165,7 @@ func _start_shift() -> void:
     _select_first_waiting_request(false)
     _tab_order.grab_focus()
     if is_instance_valid(flow): flow.playing(_next_mode)
+    if is_instance_valid(feedback): feedback.reset()
 
 func _build_dialogs() -> void:
     _restart = ConfirmationDialog.new()
@@ -1117,10 +1184,11 @@ func _build_dialogs() -> void:
         _notify("A clean slate. Welcome back!")
     )
     add_child(_reset)
-    _results = ConfirmationDialog.new()
+    _results = preload("res://scripts/shift_report.gd").new()
     _results.name = "ResultsDialog"
-    _results.get_ok_button().text = "Another rush"
-    _results.get_cancel_button().text = "Keep exploring"
+    _results.get_ok_button().text = "Play Again"
+    _results.get_cancel_button().text = "Back to Café"
+    _results.canceled.connect(func(): flow.show_welcome())
     _star_row = HBoxContainer.new()
     _star_row.name = "StarRow"
     _star_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1129,7 +1197,7 @@ func _build_dialogs() -> void:
         var star: Control = StarIcon.new()
         star.set("filled", false)
         _star_row.add_child(star)
-    _results.add_child(_star_row)
+    _results.content.add_child(_star_row)
     _results.confirmed.connect(func():
         _next_mode = "RUSH"
         _start_shift()
@@ -1139,25 +1207,38 @@ func _build_dialogs() -> void:
     _options.name = "OptionsDialog"
     _options.title = "Make yourself comfortable"
     var c: VBoxContainer = _column(12)
-    _options.add_child(c)
+    var settings_scroll := ScrollContainer.new()
+    settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    settings_scroll.follow_focus = true
+    settings_scroll.custom_minimum_size = Vector2(300,180)
+    _options.add_child(settings_scroll)
+    c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    settings_scroll.add_child(c)
     var sound := CheckButton.new()
     sound.text = "Sound effects"
     sound.button_pressed = sound_on
-    sound.toggled.connect(func(value: bool): sound_on = value)
+    sound.toggled.connect(func(value: bool):
+        sound_on = value
+        _save_preferences()
+    )
     sound.name = "SoundToggle"
+    sound.custom_minimum_size.y = 48
     c.add_child(sound)
     var motion := CheckButton.new()
     motion.text = "Reduce motion"
     motion.name = "MotionToggle"
+    motion.custom_minimum_size.y = 48
     motion.toggled.connect(func(value: bool):
         motion_off = value
         _world.reduced_motion = value
         if is_instance_valid(prep_station): prep_station.bench.reduced_motion = value
+        _save_preferences()
     )
     c.add_child(motion)
     var music := CheckButton.new()
     music.text = "Café ambience"
     music.name = "MusicToggle"
+    music.custom_minimum_size.y = 48
     music.button_pressed = music_on
     music.toggled.connect(func(value: bool):
         music_on = value
@@ -1166,6 +1247,7 @@ func _build_dialogs() -> void:
                 _music.play()
             elif not value:
                 _music.stop()
+        _save_preferences()
     )
     c.add_child(music)
     var shortcuts_hint: Label = _label("Shortcuts: 1 order desk · 2 kitchen · Esc clears the tray or selection.",12,MUTED)
@@ -1184,9 +1266,15 @@ func _build_dialogs() -> void:
     _sync_dialog = AcceptDialog.new()
     _sync_dialog.name = "SyncDialog"
     _sync_dialog.title = "A till here. A kitchen over there."
+    _sync_scroll = ScrollContainer.new()
+    _sync_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    _sync_scroll.follow_focus = true
+    _sync_scroll.custom_minimum_size = Vector2(340,200)
+    _sync_dialog.add_child(_sync_scroll)
     _sync_box = _column(10)
     _sync_box.custom_minimum_size.x = 500
-    _sync_dialog.add_child(_sync_box)
+    _sync_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _sync_scroll.add_child(_sync_box)
     _sync_help = _label("Create a till room, then paste its kitchen code on a second device. Room credentials last seven days and are kept in memory. Keep the code private.",14,MUTED)
     _sync_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     _sync_help.custom_minimum_size.x = 500
@@ -1231,12 +1319,24 @@ func _build_dialogs() -> void:
         _sync_input.clear()
         _sync_dialog.hide()
     ,false,"Disconnect"))
+    _sync_box.add_child(_button("Retry connection / pending ticket",func(): KitchenSync.retry_now(),false,"RetrySync"))
     add_child(_sync_dialog)
     for dialog in [_restart,_reset,_results,_options,_sync_dialog]:
         _style_dialog(dialog)
 
 func _open_sync() -> void:
-    _sync_dialog.popup_centered(Vector2i(400,660) if _phone_mode else Vector2i(550,570))
+    var available: Vector2i = Vector2i(get_viewport_rect().size)-Vector2i(32,76)
+    _sync_dialog.popup_centered(Vector2i(mini(550,available.x),mini(680,available.y)))
+
+func _open_options() -> void:
+    var available: Vector2i = Vector2i(get_viewport_rect().size)-Vector2i(40,100)
+    _options.popup_centered(Vector2i(mini(400,available.x),mini(520,available.y)))
+
+func _exit_tree() -> void:
+    for player in [_audio,_music]:
+        if is_instance_valid(player):
+            player.stop()
+            player.stream = null
 
 func _paste_code() -> void:
     if OS.has_feature("web"):
