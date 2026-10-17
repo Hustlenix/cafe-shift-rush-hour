@@ -175,6 +175,18 @@ func _run() -> void:
     await _frames()
     check(store.shift.mode == "RUSH","Rush confirm starts timer")
     menu_scroll.scroll_vertical = 0
+    # A restart drops guests back to walking; wait for the floor to settle so
+    # the capture shows the real rush layout with guests parked at their slots.
+    for _i in range(600):
+        var settled: bool = true
+        for id in app._world.actors.keys():
+            if bool(app._world.actors[id].get("moving", false)):
+                settled = false
+                break
+        if settled:
+            break
+        await process_frame
+    await _frames(4)
     await _capture("rush-hour")
     var urgent_request: Dictionary = store.shift.requests[0]
     urgent_request["patience"] = 19.0

@@ -655,7 +655,7 @@ func _refresh_requests() -> void:
         if ResourceLoader.exists(path):
             var atlas := AtlasTexture.new()
             atlas.atlas = load(path)
-            atlas.region = Rect2(0,0,16,32)
+            atlas.region = Rect2(288,0,16,32)  # front-facing frame (row 4 of the sheet)
             portrait.texture = atlas
         portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
         portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

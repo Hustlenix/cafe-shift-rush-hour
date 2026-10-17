@@ -38,6 +38,14 @@ A fresh-origin run against the production deployment at [that day's Vercel build
 
 `tools/verify_live_export.py`: **PASS: all six hosted runtime files match the local export; WASM MIME is correct.** Actual sizes and hashes are in [live-export-proof.json](live-export-proof.json). The release archive contains compiled runtime files and instructions, with no raw paid asset pack.
 
+## Café-floor fidelity re-verification — 2026-10-17
+
+`tests/test_core.gd`: **PASS: 71 core checks; 0 failures**. `tests/test_orders.gd`: **PASS** (cart, totals, placement, kitchen statuses, scoring, NPC ticket). `tests/test_ui.gd`: **PASS: native GUI, 52 pointer activations; 0 failures** — the rush-hour capture now waits for every walker to settle, so `rush-hour.png` shows both guests parked front-facing at their slots with legible name tags, the selected guest gold-framed under the order bubble, and no leftover status icons.
+
+The floor animates the full visit now: guests enter from the door with the run sheet, face their direction of travel, turn front-facing while waiting, and depart with the pixel heart. Name tags and the selected guest's bubble draw in screen space so text stays crisp at any zoom; the queue portraits use the front-facing frame. A captured "extra guest" was decoded as a guest mid-transition between the Free Play auto-refill and the Rush restart, not a state bug; the one real defect the visual investigation found — waiting dots drawn over a departing guest — was fixed with a dedicated `LEAVING` state. The 24-frame character sheets are single-row strips: 6 frames each for right, up, left, down (front), in that order.
+
+The deployed build was re-verified after the pass: `tools/verify_live_export.py` — **PASS: all six hosted runtime files match the local export; WASM MIME is correct** (refreshed [live-export-proof.json](live-export-proof.json)) — and the Chromium boot check at 1440×900 and 390×844 reported zero console, page and network errors. The public release bundle was repackaged, re-uploaded and re-downloaded: the published zip hash equals the local package (`f822cd27…`).
+
 ## Honest boundaries
 
 No PIXL journal or claimed development duration was created. AI assistance is documented. Existing Hackatime endpoint remains unchanged; automated edits were not converted into synthetic human hours. Both synchronization proofs used independent clients on one computer. A physical phone, touchscreen, controller and loss-of-connectivity recovery on an actual mobile network have not been tested. Rooms expire in seven days; tokens remain in memory, so refreshing the till requires a fresh room.
