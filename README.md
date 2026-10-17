@@ -1,11 +1,11 @@
 # CAFÉ SHIFT
 
-This is my idea in play for that cafe trial in [PIXL](https://pixl.hackclub.com/trials)/
+This is my idea in play for that cafe trial in [PIXL](https://pixl.hackclub.com/trials)
 My idea is that make a game where you are the owner of the cafe and you gotta serve the customers, it is fun to play
 My project: [PIXL project 1646](https://pixl.hackclub.com/projects/1646). 
 My idea in play: [game](https://cafe-shift-rush-hour.vercel.app/)
 
-![Actual Godot gameplay](<img width="1917" height="908" alt="image" src="https://github.com/user-attachments/assets/dd704294-c1fc-4646-a772-9e9ec0539291" />
+(<img width="1917" height="908" alt="image" src="https://github.com/user-attachments/assets/dd704294-c1fc-4646-a772-9e9ec0539291" />
 )
 
 ## Play
