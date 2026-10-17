@@ -59,11 +59,11 @@ func _run() -> void:
     store.earnings = 0
     store.served_count = 0
     store.start_shift("FREE")
-    app = load("res://scenes/main.tscn").instantiate()
+    app = load("res://scenes/order_desk.tscn").instantiate()
     root.add_child(app)
     await _frames(12)
     check(app.selected_request == "R1" and app._request_prompt.text.contains("Amelia"),"First guest and recipe are visible on the till")
-    # The café floor is an input surface, not only an illustration. Clear the
+    # The cafÃ© floor is an input surface, not only an illustration. Clear the
     # model's current selection, then select the waiting customer by clicking
     # their drawn actor.
     var world: Control = app._world
@@ -111,8 +111,15 @@ func _run() -> void:
     check(store.cart.is_empty(),"Clear cart button")
     await _click("Add_latte")
     check(app._send.disabled and app._request_prompt.text.contains("1/2 items packed"),"A partial recipe cannot be sent")
+    var latte_minus: Button = app.find_child("Minus_latte",true,false) as Button
+    var cart_rect: Rect2 = app._cart_scroll.get_global_rect()
+    check(app._cart_scroll.size.y >= 90 and latte_minus != null and cart_rect.has_point(latte_minus.get_global_rect().get_center()) and root.get_visible_rect().has_point(latte_minus.get_global_rect().get_center()),"Cart quantity controls stay visible in the desktop receipt")
     await _click("Add_croissant")
     check(not app._send.disabled and app._request_prompt.text.contains("PERFECT MATCH"),"Exact recipe unlocks the kitchen ticket")
+    await _click("Add_matcha")
+    check(app._send.disabled and app._request_prompt.text.contains("remove extras"),"An extra item blocks the ticket and explains how to remove it")
+    await _click("Minus_matcha")
+    check(not app._send.disabled and store.cart_total() == 320,"Receipt minus control removes an extra item and restores the exact request")
     var menu_scroll: ScrollContainer = app._menu_grid.get_parent() as ScrollContainer
     menu_scroll.scroll_vertical = 0
     await _capture("till")
@@ -241,7 +248,7 @@ func _run() -> void:
     check(music != null,"Music toggle exists in options")
     if music != null:
         music.button_pressed = false
-        check(not app.music_on,"Music toggle controls the café ambience")
+        check(not app.music_on,"Music toggle controls the cafÃ© ambience")
     # Dialog buttons belong to separate viewports; native signals are used there.
     var reset: Button = app.find_child("ResetProgress",true,false)
     reset.pressed.emit()

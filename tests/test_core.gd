@@ -15,7 +15,7 @@ func _run() -> void:
     var fresh: Node = load("res://scripts/order_store.gd").new()
     fresh.save_path = "user://new_player_%d.json" % Time.get_ticks_usec()
     fresh._ready()
-    check(fresh.shift.mode == "RUSH" and fresh.shift.requests.size() == 2,"A first-time player enters an active Rush shift")
+    check(fresh.shift.mode == "FREE" and fresh.shift.requests.size() == 1,"A first-time player starts with safe untimed practice")
     fresh.free()
     var store: Node = load("res://scripts/order_store.gd").new()
     store.persistence_enabled = false
