@@ -53,13 +53,13 @@ func _process(delta: float) -> void:
         _save_clock = 0
         save_data()
 
-func start_shift(mode: String) -> void:
+func start_shift(mode: String, seed_value: int = -1) -> void:
     gameplay_running = true
     cart.clear()
     orders.clear()
     served_count = 0
     earnings = 0
-    shift.start(mode)
+    shift.start(mode,seed_value)
     save_data()
     cart_changed.emit()
     orders_changed.emit()
@@ -196,7 +196,7 @@ func advance_order(order_id: int, quality_bonus: int = 0) -> bool:
             orders[i]["status"] = "DONE"
             served_count += 1
             earnings += int(orders[i]["total"])
-            var reward: int = 25 + shift.completed(order_id) + clampi(quality_bonus, 0, 20)
+            var reward: int = 25 + shift.completed(order_id,clampi(quality_bonus,0,20),int(orders[i].get("perfect_pours",0))) + clampi(quality_bonus, 0, 20)
             xp += reward
             orders[i]["xp"] = reward
             orders[i]["quality_bonus"] = clampi(quality_bonus, 0, 20)
@@ -259,7 +259,7 @@ func _snapshot() -> Dictionary:
 func begin_tutorial() -> void:
     if not _tutorial_backup.is_empty(): return
     _tutorial_backup = _snapshot()
-    start_shift("FREE")
+    start_shift("FREE",0)
 
 func end_tutorial(completed: bool) -> void:
     if _tutorial_backup.is_empty(): return

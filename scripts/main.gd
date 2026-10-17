@@ -716,6 +716,7 @@ func _refresh_requests() -> void:
         var info: VBoxContainer = _column(3)
         info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         info.add_child(_label("%s · Table %s" % [request["name"],request["table"]],15))
+        info.add_child(_label(str(request.get("personality","Regular")),13,CORAL))
         var lines: PackedStringArray = []
         for key in request["recipe"]:
             lines.append("%d × %s" % [int(request["recipe"][key]),OrderStore.find_product(key)["name"]])
@@ -725,7 +726,7 @@ func _refresh_requests() -> void:
         info.add_child(description)
         if OrderStore.shift.mode == "RUSH":
             var patience := ProgressBar.new()
-            patience.max_value = 65
+            patience.max_value = float(request.get("max_patience",65))
             patience.value = request["patience"]
             patience.show_percentage = false
             patience.tooltip_text = "The guest leaves when this reaches zero."
@@ -763,6 +764,7 @@ func _select_request(id: String) -> void:
         _world.set_selected_request(id)
     _update_request_prompt()
     _notify("%s wants %s. Match the list in your order card." % [request["name"], _recipe_summary(request["recipe"])])
+    if request.has("remark"): _notify(str(request["name"]) + ": " + str(request["remark"]))
     _refresh_requests()
     _refresh_cart()
     _switch_screen("ORDER")

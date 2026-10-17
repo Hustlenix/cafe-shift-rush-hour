@@ -59,11 +59,12 @@ func _run() -> void:
     store.xp = 0
     store.earnings = 0
     store.served_count = 0
-    store.start_shift("FREE")
+    store.start_shift("FREE", 0)
     app = load("res://scenes/main.tscn").instantiate()
     root.add_child(app)
     await _frames(12)
     await _click("StartPractice")
+    store.start_shift("FREE",0)
     check(app.selected_request == "R1" and app._request_prompt.text.contains("Amelia"),"First guest and recipe are visible on the till")
     # The café floor is an input surface, not only an illustration. Clear the
     # model's current selection, then select the waiting customer by clicking
