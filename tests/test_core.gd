@@ -15,7 +15,9 @@ func _run() -> void:
     var fresh: Node = load("res://scripts/order_store.gd").new()
     fresh.save_path = "user://new_player_%d.json" % Time.get_ticks_usec()
     fresh._ready()
-    check(fresh.shift.mode == "RUSH" and fresh.shift.requests.size() == 2,"A first-time player enters an active Rush shift")
+    check(fresh.shift.mode == "FREE" and not fresh.gameplay_running,"Fresh players enter a paused, untimed welcome state")
+    fresh._process(30)
+    check(fresh.shift.remaining == 180 and fresh.shift.elapsed == 0,"Welcome does not consume the challenge clock")
     fresh.free()
     var store: Node = load("res://scripts/order_store.gd").new()
     store.persistence_enabled = false
@@ -123,6 +125,31 @@ func _run() -> void:
     check(roundtrip.best["score"] == 210 and roundtrip.best["served"] == 5 and roundtrip.best["streak"] == 5,"Best-shift record round-trips through the save")
     roundtrip.load_data()
     check(roundtrip.cart_item_count() == 1,"Reload is idempotent")
+    # Lessons demonstrate the real order API without overwriting an in-progress run.
+    var previous: Dictionary = store._snapshot()
+    store.begin_tutorial()
+    for product in store.shift.requests[0]["recipe"]:
+        store.add_item(str(product))
+    var lesson_ticket: int = store.place_order("","","R1")
+    check(lesson_ticket > 0 and store.advance_order(lesson_ticket) and store.advance_order(lesson_ticket),"Tutorial uses actual validated ticket transitions")
+    roundtrip.load_data()
+    check(roundtrip.xp == int(previous["xp"]) and roundtrip.cart == previous["cart"] and roundtrip.orders == previous["orders"],"Closing mid-lesson preserves saved progress")
+    store.end_tutorial(true)
+    roundtrip.load_data()
+    check(roundtrip.tutorial_completed,"Tutorial completion survives a new store instance")
+    var returning_player: Node = load("res://scripts/order_store.gd").new()
+    returning_player.save_path = store.save_path
+    returning_player._ready()
+    check(returning_player.tutorial_completed and not returning_player.gameplay_running,"Restart loads completion and still pauses at welcome")
+    returning_player.free()
+    check(roundtrip.xp == int(previous["xp"]) and roundtrip.shift.snapshot() == previous["shift"],"Tutorial restores original XP and entire shift")
+    store.begin_tutorial()
+    store.end_tutorial(false)
+    check(store.tutorial_completed,"Skipping a replay cannot erase completion")
+    store.shift.served = 100
+    store.shift.best_streak = 100
+    var prior_best: Dictionary = store.best.duplicate()
+    check(not store.record_best() and store.best == prior_best,"Practice cannot alter competitive records")
     var file: FileAccess = FileAccess.open(store.save_path,FileAccess.WRITE)
     file.store_string(JSON.stringify({"version":1,"cart":{"latte":0,"chai":2,"ghost":2,"cookie":"oops"},"next_order_id":101,"orders":[
         {"id":900,"status":"NEW","items":[{"id":"chai","qty":2,"price":1}]},
@@ -135,6 +162,24 @@ func _run() -> void:
     check(roundtrip.orders.size() == 1 and roundtrip.orders[0]["total"] == 180,"Malformed and duplicate tickets rejected; prices recomputed")
     check(roundtrip.next_order_id == 901,"Next ID cannot collide with restored orders")
     check(roundtrip.best["score"] == 0 and roundtrip.best["streak"] == 0,"Legacy saves start best-shift records at zero")
+    for schema in [1,2]:
+        file = FileAccess.open(store.save_path,FileAccess.WRITE)
+        file.store_string(JSON.stringify({"version":schema,"cart":{"chai":2},"xp":123,"earnings":90,"orders":[{"id":900,"status":"PREPARING","items":[{"id":"chai","qty":1}]}],"shift":{"mode":"RUSH","active":true,"remaining":137,"elapsed":43,"requests":[]},"best":{"score":210}}))
+        file.close()
+        var legacy: Node = load("res://scripts/order_store.gd").new()
+        legacy.save_path = store.save_path
+        legacy._ready()
+        check(legacy.shift.mode == "RUSH" and legacy.shift.remaining == 137 and not legacy.gameplay_running,"Version %d resumes at welcome without losing saved timer" % schema)
+        check(legacy.xp == 123 and legacy.orders[0]["status"] == "PREPARING" and legacy.cart_total() == 180,"Version %d keeps orders, cart and XP" % schema)
+        legacy.shift.requests[0]["recipe"] = {"chai":2}
+        legacy.save_data()
+        legacy.load_data()
+        check(legacy.shift.matches(str(legacy.shift.requests[0]["id"]),legacy.cart),"Version %d restored requests still match integer cart quantities" % schema)
+        check(not legacy.tutorial_completed,"Version %d defaults new tutorial flag safely" % schema)
+        legacy.save_data()
+        var upgraded: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(store.save_path))
+        check(int(upgraded["version"]) == 3 and int(upgraded["xp"]) == 123,"Version %d migrates safely to version 3" % schema)
+        legacy.free()
     file = FileAccess.open(store.save_path,FileAccess.WRITE)
     file.store_string('{"version":999}')
     file.close()

@@ -48,7 +48,8 @@ func _capture(name: String) -> void:
         return
     await create_timer(0.3).timeout
     await RenderingServer.frame_post_draw
-    var path: String = "res://docs/screenshots/"+name+".png"
+    DirAccess.make_dir_recursive_absolute("res://work/screenshots")
+    var path: String = "res://work/screenshots/"+name+".png"
     var result: Error = root.get_texture().get_image().save_png(path)
     check(result == OK,"Screenshot saved: "+name)
 
@@ -62,6 +63,7 @@ func _run() -> void:
     app = load("res://scenes/main.tscn").instantiate()
     root.add_child(app)
     await _frames(12)
+    await _click("StartPractice")
     check(app.selected_request == "R1" and app._request_prompt.text.contains("Amelia"),"First guest and recipe are visible on the till")
     # The café floor is an input surface, not only an illustration. Clear the
     # model's current selection, then select the waiting customer by clicking

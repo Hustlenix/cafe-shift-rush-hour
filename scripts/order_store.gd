@@ -31,17 +31,20 @@ var persistence_enabled: bool = true
 var last_error: String = ""
 var shift: RefCounted = preload("res://scripts/shift_rules.gd").new()
 var _save_clock: float = 0.0
+var gameplay_running: bool = false
+var tutorial_completed: bool = false
+var _tutorial_backup: Dictionary = {}
 
 func _ready() -> void:
-    var has_save: bool = FileAccess.file_exists(save_path)
     load_data()
-    if not has_save and persistence_enabled:
-        # Put a first-time player straight into the five-order challenge.
-        shift.start("RUSH")
-    elif shift.requests.is_empty() and shift.active:
+    # Loading is deliberately paused; the welcome screen owns the next action.
+    gameplay_running = false
+    if shift.requests.is_empty() and shift.active:
         shift.welcome()
 
 func _process(delta: float) -> void:
+    if not gameplay_running:
+        return
     if shift.tick(delta):
         game_changed.emit()
         save_data()
@@ -51,6 +54,7 @@ func _process(delta: float) -> void:
         save_data()
 
 func start_shift(mode: String) -> void:
+    gameplay_running = true
     cart.clear()
     orders.clear()
     served_count = 0
@@ -213,6 +217,8 @@ func status_count(status: String) -> int:
 
 func record_best() -> bool:
     ## Called once when a shift report is shown. Returns true if the score is a new record.
+    if shift.mode != "RUSH" or not _tutorial_backup.is_empty():
+        return false
     var new_score_best: bool = shift.result == "SUCCESS" and shift.score > int(best.get("score", 0))
     var changed: bool = false
     if new_score_best:
@@ -229,6 +235,8 @@ func record_best() -> bool:
     return new_score_best
 
 func reset_demo() -> void:
+    _tutorial_backup.clear()
+    tutorial_completed = false
     cart.clear()
     orders.clear()
     next_order_id = 101
@@ -242,6 +250,35 @@ func reset_demo() -> void:
     orders_changed.emit()
     game_changed.emit()
 
+func _snapshot() -> Dictionary:
+    return {"version":3,"cart":cart.duplicate(true),"orders":orders.duplicate(true),
+        "next_order_id":next_order_id,"served_count":served_count,"earnings":earnings,
+        "xp":xp,"best":best.duplicate(),"shift":shift.snapshot().duplicate(true),
+        "tutorial_completed":tutorial_completed}
+
+func begin_tutorial() -> void:
+    if not _tutorial_backup.is_empty(): return
+    _tutorial_backup = _snapshot()
+    start_shift("FREE")
+
+func end_tutorial(completed: bool) -> void:
+    if _tutorial_backup.is_empty(): return
+    tutorial_completed = tutorial_completed or completed
+    cart = _tutorial_backup["cart"]
+    orders.assign(_tutorial_backup["orders"])
+    next_order_id = int(_tutorial_backup["next_order_id"])
+    served_count = int(_tutorial_backup["served_count"])
+    earnings = int(_tutorial_backup["earnings"])
+    xp = int(_tutorial_backup["xp"])
+    best = _tutorial_backup["best"]
+    shift.restore(_tutorial_backup["shift"])
+    _tutorial_backup.clear()
+    gameplay_running = false
+    save_data()
+    cart_changed.emit()
+    orders_changed.emit()
+    game_changed.emit()
+
 func save_data() -> void:
     if not persistence_enabled:
         return
@@ -249,17 +286,10 @@ func save_data() -> void:
     if file == null:
         push_warning("Save failed: " + str(FileAccess.get_open_error()))
         return
-    file.store_string(JSON.stringify({
-        "version": 2,
-        "cart": cart,
-        "orders": orders,
-        "next_order_id": next_order_id,
-        "served_count": served_count,
-        "earnings": earnings,
-        "xp": xp,
-        "best": best,
-        "shift": shift.snapshot()
-    }, "  "))
+    # A lesson is a disposable local sandbox, even if the app closes mid-step.
+    var data: Dictionary = _tutorial_backup.duplicate(true) if not _tutorial_backup.is_empty() else _snapshot()
+    data["tutorial_completed"] = tutorial_completed
+    file.store_string(JSON.stringify(data, "  "))
     file.close()
     var error: Error = DirAccess.rename_absolute(ProjectSettings.globalize_path(save_path + ".tmp"), ProjectSettings.globalize_path(save_path))
     if error != OK:
@@ -274,7 +304,7 @@ func load_data() -> void:
         push_warning("Ignoring invalid save file")
         return
     var state: Dictionary = raw
-    if int(state.get("version", 1)) not in [1, 2]:
+    if int(state.get("version", 1)) not in [1, 2, 3]:
         last_error = "This save belongs to a newer version. It was left untouched."
         persistence_enabled = false
         return
@@ -315,6 +345,7 @@ func load_data() -> void:
     served_count = maxi(0, int(state.get("served_count", 0)))
     earnings = maxi(0, int(state.get("earnings", 0)))
     xp = maxi(0, int(state.get("xp", served_count * 25)))
+    tutorial_completed = state.get("tutorial_completed",false) == true
     best = {"score": 0, "served": 0, "streak": 0}
     if typeof(state.get("best")) == TYPE_DICTIONARY:
         var best_state: Dictionary = state["best"]

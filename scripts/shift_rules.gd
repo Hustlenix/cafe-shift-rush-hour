@@ -154,9 +154,15 @@ func restore(data: Dictionary) -> void:
         if str(r["state"]) not in ["WAITING", "KITCHEN"]:
             continue
         var valid: bool = true
+        var recipe: Dictionary = {}
         for key in r["recipe"]:
             if key not in ["latte", "espresso", "coldbrew", "chai", "matcha", "croissant", "toastie", "brownie", "cookie"] or typeof(r["recipe"][key]) not in [TYPE_INT, TYPE_FLOAT] or int(r["recipe"][key]) < 1 or int(r["recipe"][key]) > 9:
                 valid = false
+            else:
+                recipe[str(key)] = int(r["recipe"][key])
         if valid and requests.size() < 3:
+            # JSON numbers are floats; recipe matching uses integer cart counts.
+            r["recipe"] = recipe
+            r["order_id"] = int(r["order_id"])
             r["patience"] = clampf(float(r["patience"]), 0, 65)
             requests.append(r)

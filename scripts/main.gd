@@ -88,6 +88,7 @@ var _receipt_panel: PanelContainer
 var _kitchen_columns: Array[PanelContainer] = []
 var _sync_box: VBoxContainer
 var _sync_help: Label
+var flow: Node
 
 func _ready() -> void:
     texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -122,8 +123,13 @@ func _ready() -> void:
     _refresh_all()
     _select_first_waiting_request(false)
     _tab_order.grab_focus()
+    flow = preload("res://scripts/game_flow.gd").new()
+    flow.host = self
+    add_child(flow)
 
 func _process(_delta: float) -> void:
+    if is_instance_valid(flow) and flow.state == flow.State.WELCOME:
+        return
     _clock.text = "ONLINE" if KitchenSync.active else ("%02d:%02d" % [int(ceil(OrderStore.shift.remaining)) / 60, int(ceil(OrderStore.shift.remaining)) % 60] if OrderStore.shift.mode == "RUSH" else "FREE PLAY")
     _served.text = "%d online ticket%s" % [KitchenSync.orders.size(),"" if KitchenSync.orders.size() == 1 else "s"] if KitchenSync.active else ("%d / 5 served" % OrderStore.shift.served if OrderStore.shift.mode == "RUSH" else "%d served today" % OrderStore.shift.served)
     _xp.text = "%d XP  ·  Lv %d" % [OrderStore.xp, 1 + OrderStore.xp / 150]
@@ -262,6 +268,7 @@ func _button(text: String, action: Callable, primary: bool = false, node_name: S
     b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
     b.add_theme_font_size_override("font_size", 14)
     b.add_theme_color_override("font_color", PAPER if primary else INK)
+    b.add_theme_color_override("font_focus_color", PAPER if primary else INK)
     b.add_theme_color_override("font_hover_color", PAPER if primary else INK)
     b.add_theme_color_override("font_pressed_color", PAPER if primary else INK)
     b.add_theme_color_override("font_disabled_color", MUTED)
@@ -340,6 +347,7 @@ func _build_ui() -> void:
     _tab_kitchen = _button("KITCHEN RAIL", func(): _switch_screen("KITCHEN"), false, "TabKitchen")
     _tabs.add_child(_tab_order)
     _tabs.add_child(_tab_kitchen)
+    _tabs.add_child(_button("Menu",func(): flow.show_welcome(),false,"MainMenu"))
     _tabs.add_child(_spacer())
     _btn_options = _button("Options",func(): _options.popup_centered(Vector2i(400,320)),false,"Options")
     _tabs.add_child(_btn_options)
@@ -405,7 +413,7 @@ func _update_layout() -> void:
     _queue_panel.custom_minimum_size = Vector2(0, 340) if _phone_mode else Vector2(315, 0)
     _order_page.vertical = _phone_mode
     _menu_column.custom_minimum_size.y = 500 if _phone_mode else 0
-    _cart_scroll.custom_minimum_size.y = 200 if _phone_mode else 0
+    _cart_scroll.custom_minimum_size.y = 200 if _phone_mode else 160
     _menu_grid.columns = 2 if _phone_mode else 3
     _receipt_panel.custom_minimum_size.x = 0 if _phone_mode else 290
     _kitchen_page.vertical = _phone_mode
@@ -418,6 +426,7 @@ func _update_layout() -> void:
     _sync_status.custom_minimum_size.x = sync_width
     _update_tab_labels()
     _stabilize_desk_pages()
+    if is_instance_valid(flow): flow._guide()
 
 func _update_tab_labels() -> void:
     _tab_order.text = "ORDER" if _phone_mode else "ORDER STATION"
@@ -605,7 +614,7 @@ func _refresh_menu() -> void:
         card.add_child(column)
         var top: HBoxContainer = _row(5)
         top.add_child(_icon(str(product["id"]),20))
-        var name: Label = _label(str(product["name"]),11)
+        var name: Label = _label(str(product["name"]),14)
         name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         top.add_child(name)
@@ -618,7 +627,7 @@ func _refresh_menu() -> void:
         bottom.add_child(_spacer())
         var id: String = str(product["id"])
         var add: Button = _button("ADD",func(): OrderStore.add_item(id),false,"Add_"+id)
-        add.custom_minimum_size = Vector2(48,26)
+        add.custom_minimum_size = Vector2(48,44)
         add.add_theme_font_size_override("font_size",11)
         bottom.add_child(add)
         column.add_child(bottom)
@@ -630,6 +639,8 @@ func _select_category(category: String) -> void:
     active_category = category
     for value in _category_buttons:
         _category_buttons[value].add_theme_stylebox_override("normal",_box(GOLD if value == category else BG,LINE,6,9))
+        _category_buttons[value].add_theme_color_override("font_color",INK if value == category else PAPER)
+        _category_buttons[value].add_theme_color_override("font_focus_color",INK if value == category else PAPER)
     _refresh_menu()
 
 func _refresh_cart() -> void:
@@ -638,7 +649,7 @@ func _refresh_cart() -> void:
     _clear(_cart_list)
     _cart_count.text = "%d items" % OrderStore.cart_item_count()
     _total.text = "TOTAL     Rs %d" % OrderStore.cart_total()
-    _walk_in.disabled = not KitchenSync.active and OrderStore.shift.mode == "RUSH"
+    _walk_in.disabled = (not KitchenSync.active and OrderStore.shift.mode == "RUSH") or (is_instance_valid(flow) and flow.state == flow.State.TUTORIAL)
     var request: Dictionary = OrderStore.shift.find_request(selected_request)
     var request_mismatch: bool = not KitchenSync.active and not selected_request.is_empty() and (request.is_empty() or not OrderStore.shift.matches(selected_request, OrderStore.cart))
     var rush_without_guest: bool = not KitchenSync.active and OrderStore.shift.mode == "RUSH" and selected_request.is_empty()
@@ -654,14 +665,18 @@ func _refresh_cart() -> void:
         var p: PanelContainer = _panel(BG)
         var c: VBoxContainer = _column(5)
         p.add_child(c)
-        c.add_child(_label(str(product["name"]),14))
+        c.add_child(_label(str(product["name"]),14,PAPER))
         var r: HBoxContainer = _row(5)
         r.add_child(_label("Rs %d" % (int(product["price"])*count),13,CORAL))
         r.add_child(_spacer())
         var product_id: String = str(id)
-        r.add_child(_button("−",func(): OrderStore.change_quantity(product_id,-1),false,"Minus_"+product_id))
-        r.add_child(_label(str(count),14))
-        r.add_child(_button("+",func(): OrderStore.change_quantity(product_id,1),false,"Plus_"+product_id))
+        var minus: Button = _button("−",func(): OrderStore.change_quantity(product_id,-1),false,"Minus_"+product_id)
+        minus.custom_minimum_size = Vector2(44,44)
+        r.add_child(minus)
+        r.add_child(_label(str(count),14,PAPER))
+        var plus: Button = _button("+",func(): OrderStore.change_quantity(product_id,1),false,"Plus_"+product_id)
+        plus.custom_minimum_size = Vector2(44,44)
+        r.add_child(plus)
         c.add_child(r)
         _cart_list.add_child(p)
 
@@ -751,6 +766,7 @@ func _select_request(id: String) -> void:
     _refresh_requests()
     _refresh_cart()
     _switch_screen("ORDER")
+    if is_instance_valid(flow): flow.customer_selected(id)
 
 func _select_first_waiting_request(announce: bool = true) -> void:
     if KitchenSync.active or not selected_request.is_empty():
@@ -842,6 +858,9 @@ func _update_request_prompt() -> void:
         _request_prompt.add_theme_color_override("font_color", MUTED)
 
 func _place_order() -> void:
+    if is_instance_valid(flow) and flow.state == flow.State.TUTORIAL and flow.step >= 3:
+        _notify("Amelia's ticket is already printed. Open Kitchen to finish it.")
+        return
     if KitchenSync.active:
         _submitted_cart = OrderStore.cart.duplicate()
         KitchenSync.submit(_submitted_cart,_name.text,_table.text)
@@ -891,11 +910,11 @@ func _refresh_kitchen() -> void:
         var c: VBoxContainer = _column(8)
         p.add_child(c)
         var id: int = int(order["id"])
-        c.add_child(_label("#%d · %s" % [id,order.get("customer","Guest")],18))
+        c.add_child(_label("#%d · %s" % [id,order.get("customer","Guest")],18,PAPER))
         c.add_child(_label("TABLE %s" % order.get("table","Takeaway"),11,MUTED))
         c.add_child(HSeparator.new())
         for line in order["items"]:
-            c.add_child(_label("%d × %s" % [int(line["qty"]),line["name"]],14))
+            c.add_child(_label("%d × %s" % [int(line["qty"]),line["name"]],14,PAPER))
         c.add_child(_label("Rs %d" % int(order["total"]),17,CORAL))
         if str(order["status"]) == "DONE":
             c.add_child(_label("SERVED" if KitchenSync.active else "SERVED  +%d XP" % int(order.get("xp",25)),13,GREEN))
@@ -979,11 +998,15 @@ func _advance(id: int) -> void:
 
 func _switch_screen(value: String) -> void:
     _screen = value
+    if is_instance_valid(flow): flow.station_changed(value)
     _order_page.visible = value == "ORDER"
     _kitchen_page.visible = value == "KITCHEN"
     _tab_order.add_theme_stylebox_override("normal",_box(GOLD if value == "ORDER" else BG,LINE,6,9))
-    _tab_order.add_theme_color_override("font_color",INK)
+    _tab_order.add_theme_color_override("font_color",INK if value == "ORDER" else PAPER)
+    _tab_order.add_theme_color_override("font_focus_color",INK if value == "ORDER" else PAPER)
     _tab_kitchen.add_theme_stylebox_override("normal",_box(GOLD if value == "KITCHEN" else BG,LINE,6,9))
+    _tab_kitchen.add_theme_color_override("font_color",INK if value == "KITCHEN" else PAPER)
+    _tab_kitchen.add_theme_color_override("font_focus_color",INK if value == "KITCHEN" else PAPER)
     if not motion_off:
         var target: Control = _order_page if value == "ORDER" else _kitchen_page
         target.modulate.a = 0.5
@@ -1038,9 +1061,14 @@ func _unhandled_input(event: InputEvent) -> void:
         return
     if _any_dialog_visible():
         return
+    if is_instance_valid(flow) and flow.state == flow.State.WELCOME:
+        return
     var key: InputEventKey = event
     match key.keycode:
         KEY_ESCAPE:
+            if is_instance_valid(flow) and flow.state == flow.State.TUTORIAL:
+                _notify("No rush. The lesson is safe; Skip Tutorial returns to the welcome screen.")
+                return
             var focused: Control = get_viewport().gui_get_focus_owner()
             if focused is LineEdit:
                 focused.release_focus()
@@ -1114,6 +1142,7 @@ func _start_shift() -> void:
     _notify("Rush is live. Match a request, send the ticket, then time your pour." if _next_mode == "RUSH" else "Free Play. Select a regular, or enter a custom guest order.")
     _select_first_waiting_request(false)
     _tab_order.grab_focus()
+    if is_instance_valid(flow): flow.playing(_next_mode)
 
 func _build_dialogs() -> void:
     _restart = ConfirmationDialog.new()
@@ -1187,6 +1216,10 @@ func _build_dialogs() -> void:
     var shortcuts_hint: Label = _label("Shortcuts: 1 order desk · 2 kitchen · Esc clears the tray or selection.",12,MUTED)
     shortcuts_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     c.add_child(shortcuts_hint)
+    c.add_child(_button("Replay interactive tutorial",func():
+        _options.hide()
+        flow.start_tutorial()
+    ,false,"ReplayTutorial"))
     c.add_child(_label("LimeZu · Modern Interiors\nOriginal café layout, icons and chimes.\nAI-assisted code; see README for details.",12,MUTED))
     c.add_child(_button("Reset all progress…",func():
         _options.hide()
