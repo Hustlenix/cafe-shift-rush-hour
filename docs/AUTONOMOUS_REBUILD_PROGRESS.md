@@ -129,7 +129,7 @@ Phase 0 complete. Phase 1 vertical slice is complete and verified, the game-feel
 
 ## Next actionable task
 
-The brief's four phases and the polish backlog (game feel, balance, web export, portrait reflow, AI-template sweep, café-floor fidelity) are complete; the floor build is deployed, re-verified live, and carried by the v1.1.0 release bundle (2026-10-17). Nothing further is queued from the polish backlog; the approved Fun & Feedback batch is complete, verified and deployed (2026-10-17). The repackaged release bundle (`bd26c945…`) awaits the owner's decision on publishing (refresh v1.1.0 versus a v1.2.0 cut), and the v2 direction is drafted in `docs/GAME_STRATEGY.md`. The remaining items are explicitly gated: physical touchscreen/controller QA on real hardware, and the human's own PIXL journal notes (never fabricated).
+The ten-finding hands-on counter redesign is implemented. The original trial Order Desk remains available. Godot 4.7.1 verification passes: 79 existing core checks, 104 preparation checks, order smoke, 55 Order Desk activations, and 160 counter pointer events plus keyboard/touch input. The counter suite covers all nine products and six requests, portrait/landscape preparation and handoff, reset confirmation, settings, pause and a phone round trip between modes. Next: finish the fresh Web export/browser proof, publish the source branch and the v2.0.0 compiled release. Physical touchscreen/controller testing and novice preference testing remain unperformed; no hours or PIXL journal entries are fabricated.
 
 ## External blockers
 

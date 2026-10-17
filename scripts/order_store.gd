@@ -36,8 +36,8 @@ func _ready() -> void:
     var has_save: bool = FileAccess.file_exists(save_path)
     load_data()
     if not has_save and persistence_enabled:
-        # Put a first-time player straight into the five-order challenge.
-        shift.start("RUSH")
+        # The first visit is safe practice. Rush starts only by explicit choice.
+        shift.start("FREE")
     elif shift.requests.is_empty() and shift.active:
         shift.welcome()
 
@@ -72,6 +72,88 @@ func find_product(product_id: String) -> Dictionary:
         if str(product["id"]) == product_id:
             return product
     return {}
+
+func find_order(order_id: int) -> Dictionary:
+    for order in orders:
+        if int(order["id"]) == order_id:
+            return order
+    return {}
+
+func take_counter_request(request_id: String) -> int:
+    var request: Dictionary = shift.find_request(request_id)
+    if request.is_empty() or not shift.active:
+        return -1
+    if str(request["state"]) == "KITCHEN":
+        return int(request["order_id"])
+    var items: Array[Dictionary] = []
+    for key in request["recipe"]:
+        var product: Dictionary = find_product(str(key))
+        if product.is_empty():
+            return -1
+        items.append({"id": key, "name": product["name"], "qty": int(request["recipe"][key]), "price": product["price"]})
+    var id: int = _insert_order(items, str(request["name"]), str(request["table"]))
+    var order: Dictionary = find_order(id)
+    order["hands_on"] = true
+    order["crafted"] = {}
+    order["craft_quality"] = 0
+    shift.sent(request_id, id)
+    save_data()
+    orders_changed.emit()
+    game_changed.emit()
+    return id
+
+func save_preparation(order_id: int, state: Dictionary) -> void:
+    var order: Dictionary = find_order(order_id)
+    if order.is_empty() or str(order["status"]) == "DONE":
+        return
+    var progress: Dictionary = order.get("preparations", {})
+    progress[str(state.get("product", ""))] = state.duplicate(true)
+    order["preparations"] = progress
+    if str(order["status"]) == "NEW":
+        order["status"] = "PREPARING"
+    save_data()
+    orders_changed.emit()
+
+func record_crafted_item(order_id: int, product_id: String, quality: int) -> bool:
+    var order: Dictionary = find_order(order_id)
+    if order.is_empty() or str(order["status"]) == "DONE":
+        return false
+    var required: int = 0
+    for item in order["items"]:
+        if str(item["id"]) == product_id:
+            required = int(item["qty"])
+    var crafted: Dictionary = order.get("crafted", {})
+    if required == 0 or int(crafted.get(product_id, 0)) >= required:
+        return false
+    crafted[product_id] = int(crafted.get(product_id, 0)) + 1
+    order["crafted"] = crafted
+    order["craft_quality"] = int(order.get("craft_quality", 0)) + clampi(quality, 0, 20)
+    if typeof(order.get("preparations")) == TYPE_DICTIONARY:
+        order["preparations"].erase(product_id)
+    order["status"] = "PREPARING"
+    save_data()
+    orders_changed.emit()
+    return true
+
+func tray_ready(order_id: int) -> bool:
+    var order: Dictionary = find_order(order_id)
+    if order.is_empty() or str(order["status"]) == "DONE":
+        return false
+    var crafted: Dictionary = order.get("crafted", {})
+    for item in order["items"]:
+        if int(crafted.get(str(item["id"]), 0)) != int(item["qty"]):
+            return false
+    return true
+
+func deliver_crafted(order_id: int) -> bool:
+    if not tray_ready(order_id) or (shift.mode == "RUSH" and not shift.active):
+        return false
+    var order: Dictionary = find_order(order_id)
+    var count: int = 0
+    for item in order["items"]:
+        count += int(item["qty"])
+    var quality: int = int(order.get("craft_quality", 0)) / maxi(1, count)
+    return advance_order(order_id, quality)
 
 func add_item(product_id: String) -> void:
     if find_product(product_id).is_empty():
@@ -250,7 +332,7 @@ func save_data() -> void:
         push_warning("Save failed: " + str(FileAccess.get_open_error()))
         return
     file.store_string(JSON.stringify({
-        "version": 2,
+        "version": 3,
         "cart": cart,
         "orders": orders,
         "next_order_id": next_order_id,
@@ -274,7 +356,7 @@ func load_data() -> void:
         push_warning("Ignoring invalid save file")
         return
     var state: Dictionary = raw
-    if int(state.get("version", 1)) not in [1, 2]:
+    if int(state.get("version", 1)) not in [1, 2, 3]:
         last_error = "This save belongs to a newer version. It was left untouched."
         persistence_enabled = false
         return
@@ -310,6 +392,24 @@ func load_data() -> void:
                 continue
             candidate["items"] = clean_items
             candidate["total"] = total
+            var clean_crafted: Dictionary = {}
+            var raw_crafted: Variant = candidate.get("crafted", {})
+            if typeof(raw_crafted) == TYPE_DICTIONARY:
+                for item in clean_items:
+                    var value: Variant = raw_crafted.get(str(item["id"]), 0)
+                    if typeof(value) in [TYPE_INT, TYPE_FLOAT]:
+                        clean_crafted[str(item["id"])] = clampi(int(value), 0, int(item["qty"]))
+            candidate["crafted"] = clean_crafted
+            var raw_quality: Variant = candidate.get("craft_quality", 0)
+            candidate["craft_quality"] = clampi(int(raw_quality), 0, 2000) if typeof(raw_quality) in [TYPE_INT, TYPE_FLOAT] else 0
+            var clean_preps: Dictionary = {}
+            var preps: Variant = candidate.get("preparations", {})
+            if typeof(preps) == TYPE_DICTIONARY:
+                for key in preps:
+                    var prep: Variant = preps[key]
+                    if typeof(prep) == TYPE_DICTIONARY and typeof(prep.get("step")) in [TYPE_INT, TYPE_FLOAT] and typeof(prep.get("quality")) in [TYPE_INT, TYPE_FLOAT] and str(key) in clean_crafted:
+                        clean_preps[str(key)] = {"product": str(key), "step": clampi(int(prep["step"]), 0, 3), "quality": clampi(int(prep["quality"]), 0, 20)}
+            candidate["preparations"] = clean_preps
             orders.append(candidate)
     next_order_id = maxi(101, int(state.get("next_order_id", 101)))
     served_count = maxi(0, int(state.get("served_count", 0)))

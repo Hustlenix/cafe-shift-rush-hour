@@ -19,6 +19,9 @@ var actors: Dictionary = {}
 var clock: float = 0.0
 var reduced_motion: bool = false
 var selected_request_id: String = ""
+var show_order_bubble: bool = true
+var allow_kitchen_selection: bool = false
+var spread_guests: bool = false
 var celebrations: Dictionary = {}
 var floats: Array[Dictionary] = []
 var confetti_pieces: Array[Dictionary] = []
@@ -109,21 +112,25 @@ func _actor_at(point: Vector2) -> String:
     var scale_factor: float = minf(size.x / 256, size.y / 192)
     var origin: Vector2 = (size - Vector2(256, 192) * scale_factor) / 2
     for actor in actors.values():
-        if str(actor.get("state", "")) != "WAITING":
+        if str(actor.get("state", "")) != "WAITING" and not (allow_kitchen_selection and str(actor.get("state", "")) == "KITCHEN"):
             continue
         var actor_position: Vector2 = origin + (actor["pos"] as Vector2) * scale_factor
         var hit_box := Rect2(actor_position - Vector2(5, 8) * scale_factor, Vector2(26, 48) * scale_factor)
+        if spread_guests:
+            hit_box = Rect2(hit_box.get_center() - Vector2(26, 28), Vector2(52, 56))
         if hit_box.has_point(point):
             return str(actor["id"])
     return ""
 
 func _queue_slot(index: int) -> Vector2:
+    if spread_guests:
+        return Vector2(52 + clampi(index, 0, 2) * 72, 124)
     return QUEUE_SLOTS[clampi(index, 0, QUEUE_SLOTS.size() - 1)]
 
 func _update_facing(actor: Dictionary, moved: Vector2) -> void:
     if moved.length() <= 0.05:
         actor["moving"] = false
-        if str(actor.get("state", "")) == "WAITING":
+        if str(actor.get("state", "")) in ["WAITING", "KITCHEN"]:
             actor["facing"] = "down"
         return
     actor["moving"] = true
@@ -262,7 +269,7 @@ func _draw_screen_overlays(scale_factor: float, origin: Vector2) -> void:
             draw_string(font, at + Vector2(1, 1), str(line), HORIZONTAL_ALIGNMENT_LEFT, -1, pop_size, pop_shadow)
             draw_string(font, at, str(line), HORIZONTAL_ALIGNMENT_LEFT, -1, pop_size, pop_color)
             line_y += pop_size + 3.0
-    if selected_request_id.is_empty() or not actors.has(selected_request_id):
+    if not show_order_bubble or selected_request_id.is_empty() or not actors.has(selected_request_id):
         return
     var actor: Dictionary = actors[selected_request_id]
     if str(actor.get("state", "")) != "WAITING":

@@ -59,3 +59,27 @@ Live: the export was deployed and re-verified — `tools/verify_live_export.py` 
 ## Honest boundaries
 
 No PIXL journal or claimed development duration was created. AI assistance is documented. Existing Hackatime endpoint remains unchanged; automated edits were not converted into synthetic human hours. Both synchronization proofs used independent clients on one computer. A physical phone, touchscreen, controller and loss-of-connectivity recovery on an actual mobile network have not been tested. Rooms expire in seven days; tokens remain in memory, so refreshing the till requires a fresh room.
+
+## Receipt visibility follow-up — 2026-10-17
+
+The production canvas review exposed a desktop layout defect: the receipt scroll area collapsed to almost zero height, so the total updated while the per-item quantity controls were hidden. Rush Hour correctly rejected an overfilled recipe, but the screen gave no visible way to remove the extra item. The receipt now reserves space for compact item rows, shows the minus/count/plus controls, uses a readable warm surface, and tells players to remove extras from the receipt. Larger carts scroll inside that area; the exact-request validation remains in place.
+
+`tests/test_core.gd`: **PASS, 79 checks / 0 failures**. `tests/test_orders.gd`: **PASS**. `tests/test_ui.gd`: **PASS, 55 pointer activations / 0 failures** at the default desktop viewport and at 1280×720. New GUI checks verify that a cart decrement button is inside the visible receipt, that an extra menu item blocks submission, and that removing it restores the exact Rs 320 guest order. `docs/screenshots/till.png` now shows both requested items and their working controls.
+
+The receipt repair was deployed and all six hosted runtime files matched the export. A fresh production-deployment origin completed Amelia's Rs 320 order through New → Preparing → Done and awarded 41 XP. The cart's Add, plus and minus controls were visible and functional. This repair is retained in the separate Order Desk after the counter redesign below.
+
+## Hands-on counter redesign — 2026-10-17
+
+The ten user-specified findings are mapped to concrete changes in [COUNTER_REDESIGN.md](COUNTER_REDESIGN.md). The attached 5,000 audit probes are conditional/source-based observations; this revision does not claim to have reproduced or closed all of them.
+
+Godot 4.7.1: **79 core checks PASS**, original order smoke test **PASS**, **104 preparation checks PASS**, and the preserved Order Desk GUI **55 pointer activations / 0 failures**. The counter GUI suite passes **160 pointer events / 0 failures**, with additional touch and keyboard events. It prepares and hands over all six authored request combinations (all nine products), checks incomplete/wrong-recipient guards, settings, pause, new-shift confirmation, and mode transitions. Skill time is stepped deterministically; this is engine viewport input, not a physical device test.
+
+Visual/layout coverage: 1360×860, 1280×720, 390×844, 360×640 and 844×390. Complete recipe input also runs in the two portrait sizes and short landscape. The first screenshot pass exposed a short-landscape equipment overflow; that layout was repaired and a child-surface/hint bounds regression added. The harness initially applied the portrait input transform twice; it now uses viewport-local events per [Godot's documented push_input coordinates](https://docs.godotengine.org/en/4.7/classes/class_viewport.html#class-viewport-method-push-input). The successful rerun includes actual preparation inputs, rather than only viewport screenshots.
+
+Fresh boot now opens paused, untimed practice is the first-save default, and Rush starts only by choice. The preparation state machine owns each item's steps; OrderStore owns validated prepared quantities and rewards. Version 3 saves retain completed recipe checkpoints and tray counts; versions 1/2 load, and future schemas are left untouched. A partial gesture restarts its current step. Spills, early heat retrieval, burning, bad cuts and off-plate drops are recoverable. Duplicate plating and duplicate delivery are rejected.
+
+The added phone mode-round-trip check found a competing-scaling recursion between the hosted Order Desk and the root router. The router is now the single scaling owner when modes run together; the Order Desk retains its scaling only when run independently. The final suite passes the phone return and aspect-matched viewport checks without parser/runtime errors. New-shift confirmation is an in-game overlay, so touch and keyboard use the same viewport as gameplay.
+
+Actual game captures: `counter-brewing.png`, `counter-whisk.png`, `counter-oven.png`, `counter-desktop.png`, `counter-phone.png`, `counter-small-phone.png`, and `counter-landscape.png` under `docs/screenshots/`. Large product silhouettes are original code-authored SVGs; the paid LimeZu café and characters remain in the game and out of public raw source. Main is a mode router; preparation rules, equipment input, slip, menu, theme and audio are separate components.
+
+Web export and hosted gameplay verification for this redesign are recorded below when completed. No physical phone/controller test, blinded novice playtest, preference improvement, new development-hour claim or journal entry is claimed.
