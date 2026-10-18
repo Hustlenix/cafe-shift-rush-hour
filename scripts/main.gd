@@ -430,7 +430,7 @@ func _update_layout() -> void:
     _tabs.add_theme_constant_override("separation", 4 if _phone_mode else 8)
     _btn_sync.text = "Sync" if _phone_mode else "Connect devices"
     _stage_row.vertical = _phone_mode
-    _world.custom_minimum_size = Vector2(0, 300) if _phone_mode else Vector2(560, 190)
+    _world.custom_minimum_size = Vector2(0, 300) if _phone_mode else Vector2(560, 192)
     _queue_panel.custom_minimum_size = Vector2(0, 340) if _phone_mode else Vector2(315, 0)
     _order_page.vertical = _phone_mode
     _menu_column.custom_minimum_size.y = 500 if _phone_mode else 0
@@ -508,7 +508,7 @@ func _build_cafe() -> PanelContainer:
     scene_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
     scene_column.add_child(_label("THE CAFÉ FLOOR",11,GOLD))
     _world = WorldView.new()
-    _world.custom_minimum_size = Vector2(560,190)
+    _world.custom_minimum_size = Vector2(560,192)
     _world.size_flags_vertical = Control.SIZE_EXPAND_FILL
     if _world.has_signal("customer_selected"):
         _world.customer_selected.connect(_select_request)

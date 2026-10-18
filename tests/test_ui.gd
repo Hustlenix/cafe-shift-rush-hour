@@ -70,8 +70,8 @@ func _run() -> void:
     # model's current selection, then select the waiting customer by clicking
     # their drawn actor.
     var world: Control = app._world
-    var world_scale: float = minf(world.size.x / 256.0, world.size.y / 192.0)
-    var world_origin: Vector2 = (world.size - Vector2(256, 192) * world_scale) / 2.0
+    var world_scale: Vector2 = world.room_zoom()
+    var world_origin: Vector2 = world.room_origin(world_scale)
     app.selected_request = ""
     var actor_position: Vector2 = world.actors["R1"]["pos"]
     var world_point: Vector2 = world.global_position + world_origin + actor_position * world_scale + Vector2(10, 12) * world_scale

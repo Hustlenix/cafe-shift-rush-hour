@@ -5,11 +5,13 @@ signal customer_selected(request_id: String)
 
 ## Sprite sheets hold 24 frames: 6 each for right, up, left, down (front), in that order.
 const DIR_ROWS: Dictionary = {"right": 0, "up": 6, "left": 12, "down": 18}
-const SPAWN_POINT: Vector2 = Vector2(250, 134)
-const EXIT_POINT: Vector2 = Vector2(272, 134)
+const ROOM_SIZE: Vector2 = Vector2(256, 192)
+const CASHIER_POSITION: Vector2 = Vector2(169, 51)
+const SPAWN_POINT: Vector2 = Vector2(252, 96)
+const EXIT_POINT: Vector2 = Vector2(272, 96)
 const EXIT_ERASE_X: float = 258.0
 const QUEUE_SLOTS: Array[Vector2] = [
-    Vector2(98, 124), Vector2(128, 127), Vector2(158, 130), Vector2(192, 129), Vector2(210, 130)
+    Vector2(168, 88), Vector2(194, 94), Vector2(220, 98)
 ]
 
 var room: Texture2D
@@ -50,8 +52,8 @@ func _process(delta: float) -> void:
         var before: Vector2 = actors[id]["pos"]
         var after: Vector2 = goal if reduced_motion else before.move_toward(goal, delta * 30)
         actors[id]["pos"] = after
-        _update_facing(actors[id], after - before)
         actors[id]["state"] = str(request["state"])
+        _update_facing(actors[id], after - before)
         actors[id]["patience"] = float(request["patience"])
         actors[id]["max_patience"] = float(request.get("max_patience",65))
         actors[id]["personality"] = str(request.get("personality","Regular"))
@@ -108,13 +110,13 @@ func _gui_input(event: InputEvent) -> void:
         accept_event()
 
 func _actor_at(point: Vector2) -> String:
-    var scale_factor: float = minf(size.x / 256, size.y / 192)
-    var origin: Vector2 = (size - Vector2(256, 192) * scale_factor) / 2
+    var zoom: Vector2 = room_zoom()
+    var origin: Vector2 = room_origin(zoom)
     for actor in actors.values():
         if str(actor.get("state", "")) != "WAITING":
             continue
-        var actor_position: Vector2 = origin + (actor["pos"] as Vector2) * scale_factor
-        var hit_box := Rect2(actor_position - Vector2(5, 8) * scale_factor, Vector2(26, 48) * scale_factor)
+        var actor_position: Vector2 = origin + (actor["pos"] as Vector2).round() * zoom
+        var hit_box := Rect2(actor_position - Vector2(5, 8) * zoom, Vector2(26, 48) * zoom)
         if hit_box.has_point(point):
             return str(actor["id"])
     return ""
@@ -125,14 +127,32 @@ func _queue_slot(index: int) -> Vector2:
 func _update_facing(actor: Dictionary, moved: Vector2) -> void:
     if moved.length() <= 0.05:
         actor["moving"] = false
-        if str(actor.get("state", "")) == "WAITING":
-            actor["facing"] = "down"
+        if str(actor.get("state", "")) in ["WAITING", "KITCHEN"]:
+            actor["facing"] = _direction(CASHIER_POSITION - (actor["pos"] as Vector2))
         return
     actor["moving"] = true
+    actor["facing"] = _direction(moved)
+
+func _direction(moved: Vector2) -> String:
     if absf(moved.x) >= absf(moved.y):
-        actor["facing"] = "right" if moved.x > 0.0 else "left"
-    else:
-        actor["facing"] = "down" if moved.y > 0.0 else "up"
+        return "right" if moved.x > 0.0 else "left"
+    return "down" if moved.y > 0.0 else "up"
+
+func _pixel_transform() -> Transform2D:
+    return get_viewport().get_stretch_transform() * get_global_transform_with_canvas()
+
+func room_zoom() -> Vector2:
+    # Account for the phone canvas stretch too: one source pixel occupies a
+    # whole number of physical pixels, even when the UI itself is scaled.
+    var screen_scale: Vector2 = _pixel_transform().get_scale().abs()
+    var fit: float = minf(size.x * screen_scale.x / ROOM_SIZE.x, size.y * screen_scale.y / ROOM_SIZE.y)
+    var pixels: float = floorf(fit) if fit >= 1.0 else fit
+    return Vector2.ONE * pixels / screen_scale.max(Vector2.ONE * 0.001)
+
+func room_origin(zoom: Vector2) -> Vector2:
+    var origin: Vector2 = (size - ROOM_SIZE * zoom) / 2
+    var screen: Transform2D = _pixel_transform()
+    return screen.affine_inverse() * (screen * origin).round()
 
 func _dialogue_for(request: Dictionary) -> String:
     var recipe: Dictionary = request.get("recipe", {})
@@ -155,10 +175,10 @@ func _dialogue_for(request: Dictionary) -> String:
     return text.substr(0, 1).to_upper() + text.substr(1) + ", please."
 
 func _draw() -> void:
-    var scale_factor: float = minf(size.x / 256, size.y / 192)
-    var origin: Vector2 = (size - Vector2(256, 192) * scale_factor) / 2
-    draw_style_box(_shadow(), Rect2(origin + Vector2(4, 7), Vector2(256, 192) * scale_factor))
-    draw_set_transform(origin, 0, Vector2.ONE * scale_factor)
+    var zoom: Vector2 = room_zoom()
+    var origin: Vector2 = room_origin(zoom)
+    draw_style_box(_shadow(), Rect2(origin + Vector2(4, 7), ROOM_SIZE * zoom))
+    draw_set_transform(origin, 0, zoom)
     if room:
         draw_texture(room, Vector2.ZERO)
     else:
@@ -168,7 +188,7 @@ func _draw() -> void:
         for pos in [Vector2(25,85), Vector2(60,140), Vector2(190,145)]:
             draw_rect(Rect2(pos, Vector2(32,20)), Color("eed4a8"))
     # The barista works behind the counter; warm steam moves over the brewer.
-    _draw_actor("Lucy", Vector2(169, 51), "BARISTA")
+    _draw_actor("Lucy", CASHIER_POSITION, "BARISTA")
     for actor in actors.values():
         _draw_actor(str(actor["name"]), actor["pos"], str(actor["state"]), str(actor.get("id", "")), float(actor.get("patience", 65.0)), str(actor.get("facing", "down")), bool(actor.get("moving", false)))
     for id in celebrations.keys():
@@ -184,9 +204,10 @@ func _draw() -> void:
         var wx: float = 138.0 + i * 2.4 + sway
         draw_line(Vector2(wx, 63 - t * 16), Vector2(wx + 1.6, 58.5 - t * 16), Color(1, 0.95, 0.82, (1 - t) * 0.8), 1)
     draw_set_transform(Vector2.ZERO)
-    _draw_screen_overlays(scale_factor, origin)
+    _draw_screen_overlays(zoom, origin)
 
 func _draw_actor(name: String, pos: Vector2, state: String, request_id: String = "", patience: float = 65.0, facing: String = "down", moving: bool = false) -> void:
+    pos = pos.round()
     draw_ellipse_shadow(pos + Vector2(8,28))
     if sprites.has(name):
         var sheet: Texture2D = sprites[name]
@@ -224,40 +245,45 @@ func actor_dialogue(request_id: String) -> String:
         return ""
     return str(actors[request_id].get("dialogue", ""))
 
-func _draw_screen_overlays(scale_factor: float, origin: Vector2) -> void:
+func _draw_screen_overlays(zoom: Vector2, origin: Vector2) -> void:
     ## Name tags and the selected guest's order bubble live in screen space so text stays crisp at any zoom.
     var font: Font = ThemeDB.fallback_font
+    var scale_factor: float = minf(zoom.x, zoom.y)
     for actor in actors.values():
-        var sprite: Vector2 = origin + (actor["pos"] as Vector2) * scale_factor
+        var sprite: Vector2 = origin + (actor["pos"] as Vector2).round() * zoom
         var label: String = str(actor.get("name", ""))
         if label.is_empty():
             continue
         var name_size: int = int(clampf(round(scale_factor * 2.8), 10.0, 14.0))
         var label_width: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size).x
-        var baseline: Vector2 = Vector2(sprite.x + 8.0 * scale_factor - label_width * 0.5, sprite.y + 32.0 * scale_factor + name_size + 2.0)
-        draw_string(font, baseline + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size, Color(0.16, 0.11, 0.12, 0.8))
-        draw_string(font, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size, Color("fff3d2"))
+        var baseline: Vector2 = Vector2(sprite.x + 8.0 * zoom.x - label_width * 0.5, sprite.y + 32.0 * zoom.y + name_size + 2.0)
+        # The queue already names every guest. Only label the selected actor so
+        # adjacent customers' names do not collide at native pixel scale.
+        if str(actor.get("id","")) == selected_request_id:
+            draw_string(font, baseline + Vector2(1, 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size, Color(0.16, 0.11, 0.12, 0.8))
+            draw_string(font, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1, name_size, Color("fff3d2"))
         if str(actor.get("state","")) != "LEAVING":
             var badge: String = {"Impatient":"!","Generous":"+","Big Order":"2x","VIP":"★"}.get(str(actor.get("personality","Regular")),"")
             if badge != "": draw_string(font,baseline+Vector2(label_width+3,0),badge,HORIZONTAL_ALIGNMENT_LEFT,-1,name_size,Color("e7ba72"))
             var ratio: float = clampf(float(actor["patience"])/maxf(1,float(actor.get("max_patience",65))),0,1)
-            var at: Vector2 = baseline+Vector2(label_width*0.5-18,6)
-            draw_rect(Rect2(at,Vector2(36,4)),Color("493a39"))
-            draw_rect(Rect2(at,Vector2(36*ratio,4)),Color("c86652") if ratio < 0.25 else Color("6da18b"))
+            var width: float = minf(28,18*zoom.x)
+            var at: Vector2 = baseline+Vector2(label_width*0.5-width*0.5,6)
+            draw_rect(Rect2(at,Vector2(width,4)),Color("493a39"))
+            draw_rect(Rect2(at,Vector2(width*ratio,4)),Color("c86652") if ratio < 0.25 else Color("6da18b"))
     if actors.is_empty():
         var hint: String = "The floor is quiet · welcome a guest"
         var hint_size: int = int(clampf(round(scale_factor * 2.2), 11.0, 14.0))
         var hint_width: float = font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, hint_size).x
-        var hint_pos: Vector2 = Vector2(origin.x + 128.0 * scale_factor - hint_width * 0.5, origin.y + 186.0 * scale_factor)
+        var hint_pos: Vector2 = Vector2(origin.x + 128.0 * zoom.x - hint_width * 0.5, origin.y + 186.0 * zoom.y)
         draw_string(font, hint_pos + Vector2(1, 1), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, hint_size, Color(0.14, 0.1, 0.11, 0.6))
         draw_string(font, hint_pos, hint, HORIZONTAL_ALIGNMENT_LEFT, -1, hint_size, Color(1.0, 0.95, 0.82, 0.85))
     for popup in floats:
         var float_pos: Vector2
         var float_id: String = str(popup.get("id", ""))
         if actors.has(float_id):
-            float_pos = origin + ((actors[float_id]["pos"] as Vector2) + Vector2(8.0, -4.0)) * scale_factor
+            float_pos = origin + ((actors[float_id]["pos"] as Vector2) + Vector2(8.0, -4.0)) * zoom
         else:
-            float_pos = origin + Vector2(208.0, 96.0) * scale_factor
+            float_pos = origin + Vector2(208.0, 96.0) * zoom
         var rise: float = 0.0 if reduced_motion else (float(popup["t"]) / 1.15) * 26.0 * scale_factor
         var fade: float = clampf(1.0 - float(popup["t"]) / 1.15, 0.0, 1.0)
         var pop_size: int = int(clampf(round(scale_factor * 2.4), 11.0, 15.0))
@@ -280,10 +306,11 @@ func _draw_screen_overlays(scale_factor: float, origin: Vector2) -> void:
     if dialogue.is_empty():
         return
     var actor_pos: Vector2 = actor["pos"]
-    var head: Vector2 = origin + (actor_pos + Vector2(8.0, 0.0)) * scale_factor
-    _draw_bubble(font, head, dialogue, scale_factor, origin)
+    var head: Vector2 = origin + (actor_pos.round() + Vector2(8.0, 0.0)) * zoom
+    _draw_bubble(font, head, dialogue, zoom, origin)
 
-func _draw_bubble(font: Font, head: Vector2, dialogue: String, scale_factor: float, origin: Vector2) -> void:
+func _draw_bubble(font: Font, head: Vector2, dialogue: String, zoom: Vector2, origin: Vector2) -> void:
+    var scale_factor: float = minf(zoom.x, zoom.y)
     var font_size: int = int(clampf(round(scale_factor * 4.0), 12.0, 18.0))
     var max_text_width: float = clampf(size.x * 0.62, 120.0, 380.0)
     var shown: String = dialogue
@@ -295,10 +322,13 @@ func _draw_bubble(font: Font, head: Vector2, dialogue: String, scale_factor: flo
         shown = shown.rstrip(" ,.") + "…"
         text_width = font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
     var bubble_size: Vector2 = Vector2(text_width + 24.0, font_size + 16.0)
-    var room_rect: Rect2 = Rect2(origin, Vector2(256, 192) * scale_factor)
+    var room_rect: Rect2 = Rect2(origin, ROOM_SIZE * zoom)
     var bubble_pos: Vector2 = Vector2(head.x - bubble_size.x * 0.5, head.y - bubble_size.y - 9.0)
     bubble_pos.x = clampf(bubble_pos.x, room_rect.position.x + 4.0, room_rect.end.x - bubble_size.x - 4.0)
     bubble_pos.y = clampf(bubble_pos.y, room_rect.position.y + 4.0, room_rect.end.y - bubble_size.y - 4.0)
+    var cashier: Rect2 = Rect2(origin + CASHIER_POSITION * zoom, Vector2(16,32) * zoom).grow(4)
+    if Rect2(bubble_pos,bubble_size).intersects(cashier):
+        bubble_pos.y = room_rect.position.y + 4.0
     var bubble: Rect2 = Rect2(bubble_pos, bubble_size)
     draw_style_box(_bubble_box(), bubble)
     var tail_x: float = clampf(head.x, bubble.position.x + 14.0, bubble.end.x - 14.0)
