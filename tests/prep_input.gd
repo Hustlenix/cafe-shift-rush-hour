@@ -27,6 +27,13 @@ func capture(bench: Control, suffix: String) -> void:
     tree.root.get_texture().get_image().save_png("res://work/screenshots/"+capture_prefix+"-"+suffix+".png")
 func frames(count: int = 4) -> void:
     for _i in range(count): await tree.process_frame
+func wait_for_band(model: RefCounted) -> bool:
+    # Observe the running gauge like a player. A wall-clock sleep can overshoot
+    # when rendering stalls, even though the simulation has not advanced equally.
+    var deadline: int = Time.get_ticks_msec()+6000
+    while model.progress < 0.81 and (model.holding or model.running) and Time.get_ticks_msec() < deadline:
+        await tree.process_frame
+    return model.progress >= 0.65 and model.progress <= 1.05
 func pointer(at: Vector2, down: bool) -> void:
     var event := InputEventMouseButton.new()
     event.position = at
@@ -110,7 +117,7 @@ func cook(station: Control, touch: bool = false) -> bool:
             "hold":
                 if touch: touch_pointer(at+bench.primary_rect.get_center(),true)
                 else: pointer(at+bench.primary_rect.get_center(),true)
-                if realtime: await tree.create_timer(1.72).timeout
+                if realtime: await wait_for_band(model)
                 else: model.tick(1.72)
                 await capture(bench,"pour")
                 if touch: touch_pointer(at+bench.primary_rect.get_center(),false)
@@ -122,7 +129,7 @@ func cook(station: Control, touch: bool = false) -> bool:
                     touch_pointer(at+bench.primary_rect.get_center(),false)
                     await frames()
                 else: await click(at+bench.primary_rect.get_center())
-                if realtime: await tree.create_timer(2.85).timeout
+                if realtime: await wait_for_band(model)
                 else: model.tick(2.85)
                 await capture(bench,"heat")
                 if touch:

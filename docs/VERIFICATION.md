@@ -1,64 +1,59 @@
-# Verification
+# Verification and release identity
 
-CAFÉ SHIFT is a Godot 4.7.1 game with offline shifts and optional two-device till/kitchen synchronization. This page records **tested evidence**, not a guarantee that every device or network will work.
+This page distinguishes native gameplay tests, API tests, hosted-file checks and browser gameplay. None proves the others automatically.
 
-## Release and deployment
+## Identify the public version
 
-- [Play the Web game](https://cafe-shift-rush-hour.vercel.app/)
-- [Download the latest version](https://github.com/Hustlenix/cafe-shift-rush-hour/releases/latest)
-- [Hosted export verification](live-export-proof.json) — recorded SHA-256 matches for six runtime files and a check of the WebAssembly MIME type.
-- [Two-client synchronization evidence](sync-proof.json) — two independent Godot processes completed the till → kitchen → done flow through the deployed API.
+- [Public game](https://cafe-shift-rush-hour.vercel.app/)
+- [Current source commit and runtime hashes](https://cafe-shift-rush-hour.vercel.app/release.json)
+- [Compiled release downloads and verification attachments](https://github.com/Hustlenix/cafe-shift-rush-hour/releases/latest)
 
-The linked JSON files are **historical test records**. A new deploy requires a new verification run. Git commit identity and compiled-build byte identity are different checks.
+Maintainer releases stamp a clean committed checkout with `python tools/stamp_export.py`. `release.json` identifies the exact source commit and SHA-256 hashes of the six game runtime files. Compare it with the release tag before reporting a version mismatch. Later documentation changes do not imply a different compiled game.
 
-## Tested features
+`python tools/verify_live_export.py` makes anonymous requests and compares all six files with `builds/web`, checks WASM MIME and, when present, verifies the hosted source manifest. Its JSON report belongs to that particular URL and execution time. HTTP 200 and matching files establish public file availability and build identity, not a browser playthrough.
 
-| Area | Recorded result | Scope |
+## Reproduced on 18 October 2026
+
+A fresh public clone of gameplay commit `06786339c074754f90fd1fb563c24531f55a736b` was imported in Godot 4.7.1 without the paid assets. It passed:
+
+| Suite | Result | Scope |
 | --- | --- | --- |
-| Game rules | 79 checks passed | Orders, scoring, Rush Hour, saves, records, legacy save handling |
-| Native GUI | 53 pointer activations passed | Customer selection, order flow, kitchen, timer, results, options and keyboard shortcuts |
-| Backend security | 30 checks passed | Roles, room isolation, validation, idempotency and transitions using SQLite test fixtures |
-| Client synchronization | 37 checks passed | Two-client local server flow, recovery, retry and room revocation |
-| Production integration | Passed in recorded runs | Two independent Godot processes communicating through the live HTTPS/Postgres backend |
-| Web export | Passed in recorded runs | Chromium boot on desktop (1440 × 900) and phone-sized (390 × 844) viewports, with no reported console/page/network errors |
+| Core | 97 checks | Fresh launch paused, orders, quantities, totals, scoring, five-order win, saves and legacy migration |
+| Customers | 2,094 checks | Seeded generation, personality fairness, recipe variation and restored RNG state |
+| Preparation | 104 checks | All nine recipes, recoverable misses, saved checkpoints and exact tray requirements |
+| Events | 204 checks | Event windows, warnings, non-overlap and reward gates |
+| Progression | 32 checks | Quality, achievements and duplicate-reward protection |
+| Order smoke | Passed | Menu/cart/ticket lifecycle and NPC request |
+| Sync reliability | 42 checks | Real local API, lost acknowledgement, outage/recovery, idempotent retry and room revocation |
 
-These counts are taken from the project's October 2026 verification runs; they have **not** been rerun solely because this document was shortened.
+The backend separately passed 30 authorization, validation, idempotency and transition checks using a real SQLite fixture. Fixture security tests are not a production penetration test.
 
-## Gameplay captures
+The graphical onboarding suite uses actual native input and a real-time five-order shift. During this release check, a timing-dependent automation failure and a freed-button test reference were detected. The helper now observes the running gauge and resolves live controls after layout. A console PASS with a script error is not accepted as a clean test.
 
-| Screenshot | What it shows |
-| --- | --- |
-| [Rush Hour](screenshots/rush-hour.png) | Café floor and customer requests |
-| [Order desk](screenshots/till.png) | Menu, request selection and receipt |
-| [Preparing](screenshots/kitchen.png) | Kitchen ticket and pour meter |
-| [Completed ticket](screenshots/kitchen-done.png) | Finished kitchen flow |
-| [Shift results](screenshots/shift-report.png) | Rating, rewards and results |
-| [Phone layout](screenshots/till-phone.png) | Narrow-screen arrangement |
-| [Web till, synchronized](screenshots/web-sync-done-pos.jpg) | Browser POS receives completed ticket |
-| [Web kitchen, synchronized](screenshots/web-sync-done-kitchen.jpg) | Browser kitchen completes ticket |
+After those test-helper repairs, onboarding passed 145 checks / 136 input events with no script errors, the UI suite passed 54 pointer activations, and physical preparation passed 60 checks. Onboarding counts vary with the randomly generated recipes; the five-order success assertion remains required.
 
-These are real application captures from prior tests, not rendered mockups.
+## Native gameplay and screenshots
 
-## Reproduce locally
+The graphical suites cover welcome/tutorial completion and skip, untimed practice, Rush Hour, settings, saved progress and kitchen preparation. The physical-input suite covers all nine recipes at 1440×900, 1920×1080, 390×844, 360×800 and 844×390, including mouse, synthetic touch and keyboard preparation. These are native desktop viewports, not physical mobile devices.
 
-Install Godot 4.7.1 and use its Compatibility renderer. Source-only builds use original fallback assets; the licensed Modern Interiors pack is not included in this repository.
+Current [welcome](screenshots/current-welcome.png), [phone preparation](screenshots/current-preparation-phone.png) and [results](screenshots/current-results.png) screenshots are captures from the running native game. They include the owner's licensed Modern Interiors artwork; the public source uses original fallback rendering when the pack is absent.
 
-```sh
-godot --headless --editor --path . --quit
-godot --headless --path . --script res://tests/test_core.gd
-godot --headless --path . --script res://tests/test_orders.gd
-npm run test:backend
-godot --headless --path . --script res://tests/test_sync.gd
-godot --headless --path . --export-release Web builds/web/index.html
-python tools/package_release.py --out builds/release
-```
+For exact commands, prerequisites and sequential UI test instructions, see the [README](../README.md). Keep port 8790 free for `test_sync.gd`; it manages its own server. Headless model tests do not establish correct graphical layout.
 
-The **GUI pointer suite** in `tests/test_ui.gd` requires a real graphics viewport and must not be treated as a headless visual verification. The sync test requires the local backend dependencies; the live two-process check is provided through `tools/test_network.py` and requires a configured Godot executable.
+## Live synchronization
 
-## Known testing limits
+`tools/test_network.py` starts two independent Godot processes. The till creates a private temporary room and submits a ticket; the second process joins as Kitchen and advances it; the till receives DONE automatically. The test revokes its temporary room. Its JSON output records the endpoint, time, client process IDs and results without publishing credentials.
 
-A physical phone/touchscreen, controller, and real mobile-network loss/recovery were not validated in the recorded runs. Browser local saves depend on site-storage permissions. Room credentials are stored only in memory, so reloading the till can require a new room. Production was not modified by this repository-cleanup commit.
+Release attachments contain the latest executed proof. The tracked [sync-proof.json](sync-proof.json) and [live-export-proof.json](live-export-proof.json) are older historical records, retained for provenance. They must not be presented as tests of a newer release.
+
+## Explicit limits
+
+- Browser automation is disabled in the current Codex Work environment. A current browser playthrough and console/network inspection could not be performed for this release check.
+- A real touchscreen, physical phone, controller and mobile-network recovery remain unverified.
+- Room credentials stay in memory; reloading can require re-pairing. Web saves depend on browser site-storage permissions.
+- Source-only tests validate fallback play; they do not redistribute paid source artwork.
+- Commit history, automated test execution and heartbeat counts do not establish eligible human development hours. Personal reflection and journal attribution require the owner's confirmation.
 
 ## Asset rights
 
-[LimeZu Modern Interiors](https://limezu.itch.io/moderninteriors) is a licensed third-party asset pack. Raw licensed sprites are intentionally excluded from public source control. Only original public assets and code are tracked.
+Modern Interiors is licensed artwork by [LimeZu](https://limezu.itch.io/moderninteriors). Raw paid artwork is ignored by Git and excluded from deployment uploads. It is embedded only in compiled game artifacts. Code/original assets use MIT; the third-party art does not.

@@ -26,6 +26,12 @@ func click(id: String, touch: bool = false) -> void:
         if ancestor is ScrollContainer: ancestor.ensure_control_visible(control)
         ancestor = ancestor.get_parent()
     await frames()
+    # Timer-driven receipt/ticket refreshes may replace controls during layout.
+    # Resolve the live button again instead of dereferencing a freed instance.
+    control = app.find_child(id,true,false)
+    if not is_instance_valid(control) or not control.is_visible_in_tree():
+        check(false,"Action disappeared before input: "+id)
+        return
     var at: Vector2 = control.get_global_rect().get_center()
     for pressed in [true,false]:
         if touch:
@@ -142,7 +148,7 @@ func _run() -> void:
         var cook: RefCounted = load("res://tests/prep_input.gd").new()
         cook.tree = self
         cook.realtime = true
-        check(await cook.cook(app.prep_station),"Rush items prepared through the physical workspace")
+        check(await cook.cook(app.prep_station),"Rush items prepared through the physical workspace: "+str(cook.failures))
         await click("DeliverPrepared")
         check(store.shift.served == i+1,"Rush guest served through actual controls: "+str(i+1))
         if i < 4: await click("TabOrder")

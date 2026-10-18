@@ -10,7 +10,7 @@ source = ROOT/'builds'/'web'
 required = ['index.html','index.js','index.wasm','index.pck']
 for name in required:
     if not (source/name).is_file(): raise SystemExit('Missing exported game file: '+name)
-files = sorted(f for f in source.iterdir() if f.suffix in ['.html','.js','.wasm','.pck','.png'])
+files = sorted(f for f in source.iterdir() if f.suffix in ['.html','.js','.wasm','.pck','.png'] or f.name == 'release.json')
 args.out.mkdir(parents=True,exist_ok=True)
 archive = args.out/'cafe-shift-rush-hour-web.zip'
 instructions = ('CAFÉ SHIFT — Rush Hour\n\nPlay: https://cafe-shift-rush-hour.vercel.app/\n'
